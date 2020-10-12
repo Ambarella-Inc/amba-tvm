@@ -373,8 +373,8 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
       // collect metadata.
       const auto name_node = func->GetAttr<String>(tvm::attr::kGlobalSymbol);
       std::string symobl = std::string(name_node.value());
-      ConstantUpdater const_visit(symobl, &params_);
-      const_visit(func);
+      //ConstantUpdater const_visit(symobl, &params_);
+      //const_visit(func);
 
       return GraphAddCallNode(op, ext_func->func_name, ext_func->func_name);
     }
