@@ -1,4 +1,26 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
+/*!
+ * \file src/runtime/contrib/amba/amba_module.cc
+ * \brief Ambarella runtime module for TVM.
+ */
 #include <stdlib.h>
 #include <tvm/node/serialization.h>
 #include <tvm/relay/expr_functor.h>
@@ -17,14 +39,29 @@
 namespace tvm {
 namespace runtime {
 
+
+/*!
+ * \brief Engine for target runtime.
+ * \param engine_id_ The id of engine.
+ * \param engine_name_ The func_name of ubgraph.
+ * \param engine_in_ The input pairs of name and buffer for engine.
+ * \param engine_out_ The output paris of name and buffer for engine.
+ *
+ * To run one subgraph on Ambarella target, one Ambarella engine
+ * should be built first. Then this built engine could be executed
+ * on Ambarella target.
+ */
+
 typedef struct {
   uint32_t engine_id_;
   std::string engine_name_;
-  // map IO name to IO tensors in each engine(subgraph)
   std::vector<std::pair<std::string, DLTensor*> > engine_in_;
   std::vector<std::pair<std::string, DLTensor*> > engine_out_;
 } AmbaEngineContext;
 
+/*!
+ * \brief AmbaModule is for Ambarella target backend.
+ */
 class AmbaModule : public runtime::ModuleNode {
  public:
   explicit AmbaModule(
