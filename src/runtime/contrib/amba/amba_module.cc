@@ -95,6 +95,8 @@ class AmbaModule : public runtime::ModuleNode {
     // Generate an external packed function
     return PackedFunc([this, name](tvm::TVMArgs args, tvm::TVMRetValue* rv) {
       RunAmbaCVFlow(name, args, rv);
+      /*fprintf(stderr, "[ AmbaModule ] [ %s ] cvflow time: %d us\n",
+        name.c_str(), (*rv).operator int());*/
     });
   }
 
@@ -241,6 +243,8 @@ class AmbaModule : public runtime::ModuleNode {
           output_it.first.c_str(), &amba_arg);
         if (rval < 0) break;
       }
+      if (rval < 0) break;
+      *rv = static_cast<int>(perf.cvflow_time_us);
     } while(0);
   }
 
