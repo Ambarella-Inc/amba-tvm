@@ -30,19 +30,10 @@ import tvm
 from tvm import relay
 from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
-from tvm.contrib.tar import tar, untar
+from tvm.contrib.tar import tar
 
 # onnx imports
 from tvm.contrib.target.onnx import to_onnx
-
-try:
-    sys.path.append("/compiler/neo_shared/modules")
-    import neo_loader
-    from neo_loader import extract_model_artifacts, load_model
-    USE_LOCAL = False
-except:
-    USE_LOCAL = True
-    pass
 
 class CV22_TVM_Compilation():
 
@@ -61,6 +52,9 @@ class CV22_TVM_Compilation():
         self.out_bname = 'compiled'
 
         self.logger = self._init_logger_(debuglevel)
+
+        # import neo loader package either from service or locally
+        self._import_loader_()
 
         # get framework
         self.framework = self._get_framework_()
@@ -83,7 +77,6 @@ class CV22_TVM_Compilation():
         raise Exception(err)
 
     def _init_logger_(self, debuglevel):
-
         import subprocess
         libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
         libpath = libpath.decode().rstrip('\n')
@@ -99,8 +92,23 @@ class CV22_TVM_Compilation():
 
         return log
 
-    def _validate_input_files_(self):
+    def _import_loader_(self):
+        LOADER_SERVICE_PATH = '/compiler/neo_shared/modules/'
+        LOADER_LOCAL_PATH = '/home/neo_loader/'
 
+        if isdir(LOADER_SERVICE_PATH):
+            self.logger.info('Loading loader from neo service')
+            sys.path.append(LOADER_SERVICE_PATH)
+        elif isdir(LOADER_LOCAL_PATH):
+            self.logger.info('Loading local loader')
+            sys.path.append(LOADER_LOCAL_PATH)
+        else:
+            err = 'Unable to load neo loader locally (%s) or from neo service (%s)' % (LOADER_LOCAL_PATH, LOADER_SERVICE_PATH) 
+            self._error_(err)
+
+        import neo_loader
+
+    def _validate_input_files_(self):
         model_file = self._get_model_file_()
         self._check_for_file_(self.libtvm)
 
@@ -110,7 +118,7 @@ class CV22_TVM_Compilation():
         """
         Search the directory for model file (<model>.tar.gz)
         model.tar.gz is expected to contain the following:
-        1. model file: .pb / .onnx
+        1. model file
         2. config.json: this contains dictionary mapping each input to shape and filepath
         3. <calib>: folder containing calibration images in binary format
            Each input is expected to have a separate folder
@@ -143,51 +151,18 @@ class CV22_TVM_Compilation():
         Create DRA list text file
         Convert model to relay
         """
-        from tvm.relay.backend.contrib.cv22 import tags as T
-
-        model_files = []
-        config_json = None
-
         model_path = join(self.tmpdir, 'model')
         rmtree(model_path, ignore_errors=True)
         makedirs(model_path)
 
-        if USE_LOCAL:
-            # untar model files
-            untar(self.model, model_path)
+        from neo_loader import extract_model_artifacts
+        model_files = extract_model_artifacts(self.model, model_path)
 
-            # model filename and config filename
-            for f in listdir(model_path):
-                fpath = join(model_path,f)
-
-                if isdir(fpath):
-                    continue
-
-                # config file
-                elif f.endswith('config.json'):
-                    config_json = fpath
-
-                # model file
-                else:
-                    if self.framework == 'onnx' and f.endswith('.onnx'):
-                        model_files.append(fpath)
-
-                    elif self.framework == 'tensorflow' and f.endswith('.pb'):
-                        model_files.append(fpath)
-
-                    elif self.framework == 'mxnet' and (f.endswith('.json') or f.endswith('.params')):
-                        model_files.append(fpath)
-
-                    else:
-                        self._error_('Unimplemented error for framework %s' % self.framework)
-
-        # use neo loader
-        else:
-            model_files = extract_model_artifacts(self.model, model_path)
-            for f in model_files:
-                if f.endswith('config.json'):
-                    config_json = f
-                    break
+        config_json = None
+        for f in model_files:
+            if f.endswith('config.json'):
+                config_json = f
+                break
 
         if not model_files:
             err = 'Model file not found in %s' % model_path 
@@ -203,6 +178,8 @@ class CV22_TVM_Compilation():
         input_config = self._parse_config_(config_json)
 
         # create a txt file for DRA
+        from tvm.relay.backend.contrib.cv22 import tags as T
+
         input_shape = {}
 
         for name,items in input_config.items():
@@ -243,62 +220,9 @@ class CV22_TVM_Compilation():
 
         return input_config
 
-    def _convert_model_to_ir_local_(self, framework, model_artifacts: [str], input_shape: {str: [int]}):
-        if framework == 'onnx':
-            import onnx
-            from tvm.relay.frontend.onnx import from_onnx
-
-            model_file = model_artifacts[0]
-            modelproto = onnx.load(model_file)
-            mod, params = from_onnx(modelproto, input_shape)
-
-        elif framework == 'tensorflow':
-            from tvm.relay.frontend.tensorflow_parser import TFParser
-            from tvm.relay.frontend import from_tensorflow
-
-            model_file = model_artifacts[0]
-            tf_graph = TFParser(model_file).parse()
-            mod, params = from_tensorflow(tf_graph, shape=input_shape)
-
-        elif framework == 'mxnet':
-            import mxnet as mx
-
-            # (TBD)
-            input_name = 'data'
-            input_shape = (1,3,224,224)
-
-            model_json = None
-            save_dict = None
-
-            for f in model_artifacts:
-                if f.endswith('.json'):
-                    model_json = mx.symbol.load(f)
-                elif f.endswith('.params'):
-                    save_dict = mx.ndarray.load(f)
-
-            if model_json is None:
-                self._error_('mxnet: json file not found')
-            if save_dict is None:
-                self._error_('mxnet: params file not found')
-
-            arg_params = {}
-            aux_params = {}
-            for k, v in save_dict.items():
-                tp, name = k.split(':', 1)
-                if tp == 'arg':
-                    arg_params[name] = v
-                elif tp == 'aux':
-                    aux_params[name] = v
-
-            mod, params = relay.frontend.from_mxnet(model_json, {input_name: input_shape}, arg_params=arg_params, aux_params=aux_params)
-
-        else:
-            self._error_('Unimplemented error for framework %s' % framework)
-
-        return mod, params
-
     def _convert_model_to_ir_(self, model_files, input_shape):
         try:
+            from neo_loader import load_model
             loader = load_model(model_files, input_shape)
 
         except Exception as e:
@@ -316,24 +240,14 @@ class CV22_TVM_Compilation():
             self._error_('Unknown framework, set enviroment variable FRAMEWORK before running')
         framework = environ['FRAMEWORK'].lower()
 
-        if USE_LOCAL:
-            SUPPORTED_FRAMEWORKS = ['onnx', 'tensorflow', 'mxnet']
-            if framework not in SUPPORTED_FRAMEWORKS:
-                err = 'Unsupported framework %s local sidecar implementation, supported frameworks:%s' % (framework, SUPPORTED_FRAMEWORKS)
-                self._error_(err)
-
         return framework
 
     def _convert_model_to_relay_(self, model_artifacts, input_shape):
-        if USE_LOCAL:
-            mod, params = self._convert_model_to_ir_local_(self.framework, model_artifacts, input_shape)
-            aux_files = None
+        conversion_dict = self._convert_model_to_ir_(model_artifacts, input_shape)
 
-        else:
-            conversion_dict = self._convert_model_to_ir_(model_artifacts, input_shape)
-            mod = conversion_dict['model_objects'][0]
-            params = conversion_dict['model_objects'][1]
-            aux_files = conversion_dict['aux_files']
+        mod = conversion_dict['model_objects'][0]
+        params = conversion_dict['model_objects'][1]
+        aux_files = conversion_dict['aux_files']
 
         return mod, params, aux_files 
 
