@@ -94,7 +94,7 @@ class CV22_TVM_Compilation():
 
     def _import_loader_(self):
         LOADER_SERVICE_PATH = '/compiler/neo_shared/modules/'
-        LOADER_LOCAL_PATH = '/home/neo_loader/'
+        LOADER_LOCAL_PATH = '/home/amba_tvm_release/'
 
         if isdir(LOADER_SERVICE_PATH):
             self.logger.info('Loading loader from neo service')
