@@ -656,6 +656,7 @@ class Resize(OpConverter):
         else:
             raise Exception("Unknown coordinate_transformation_mode %s in Resize" % coord_trans)
 
+        # (TBD) assumed int tuple, have to add support when size is an expr
         size = attrs.get_int_tuple("size")
 
         return {
