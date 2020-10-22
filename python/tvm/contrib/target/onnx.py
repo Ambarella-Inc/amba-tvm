@@ -631,6 +631,71 @@ class LRN(OpConverter):
             #axis?
         }
 
+class Resize(OpConverter):
+    """Operator converter for Resize."""
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        method = attrs.get_str("method")
+        if method == "nearest_neighbor":
+            mode = b"nearest"
+        elif method == "bilinear":
+            mode = b"linear"
+        elif method == "bicubic":
+            mode = b"cubic"
+        else:
+            raise Exception("Unknown method %s in Resize" % method)
+
+        coord_trans = attrs.get_str("coordinate_transformation_mode")
+        if coord_trans == "half_pixel":
+            coord_trans = b"half_pixel"
+        elif coord_trans == "align_corners":
+            coord_trans = b"align_corners"
+        elif coord_trans == "asymmetric":
+            coord_trans = b"asymmetric"
+        else:
+            raise Exception("Unknown coordinate_transformation_mode %s in Resize" % coord_trans)
+
+        size = attrs.get_str("size")
+
+        return {
+            "mode": mode,
+            "coord_trans": coord_trans,
+            "size": size
+        }
+
+    @classmethod
+    def convert(cls, node_entry, model_container, node_dict):
+        attrs = cls.convert_attributes(node_entry["relay_node"].attrs)
+
+        name = node_entry["name"]
+        input_node = node_dict[node_entry["inputs"][0]]
+        assert len(input_node) == 1, "input node can not be a Tuple"
+        input_node = input_node[0]
+        input_shape = input_node["types"][0].shape
+
+        # (TBD) needed in opset 11
+        roi = [0]*len(input_shape) + [1]*len(input_shape)
+        roi_array = numpy.asarray(roi).astype(numpy.float64)
+        roi_node = add_input(roi_array, name, "roi", model_container)
+
+        out_size = attrs["size"]
+
+        # (onnx) rank of scale / size must match rank of X
+        # relay size node contains only spatial dimensions
+        # pad with 1s to match rank
+        match_rank_pad = len(input_shape) - len(out_size)
+        out_size_full_rank = input_shape[:match_rank_pad] + list(out_size)
+        out_size_array = numpy.asarray(out_size_full_rank).astype(numpy.int64)
+
+        scale_array = numpy.divide(out_size_array, numpy.asarray(input_shape).astype(numpy.int64)).astype(numpy.float32)
+        scale_node = add_input(scale_array, name, "scales", model_container)
+
+        input_names = [node_entry["input_names"][0], roi_node, scale_node]
+
+        resize_node = onnx.helper.make_node(cls.__name__, input_names, node_entry["output_names"], mode=attrs["mode"], coordinate_transformation_mode=attrs["coord_trans"])
+        model_container.add_nodes([resize_node])
+
 relay_to_onnx_op_mapping = {
     "reshape": Reshape,
     "nn.conv2d": Conv,
@@ -664,7 +729,8 @@ relay_to_onnx_op_mapping = {
     "layout_transform": LayoutTransform,
     "clip": Clip,
     "expand_dims": Expand,
-    'nn.lrn': LRN,
+    "nn.lrn": LRN,
+    "image.resize": Resize,
 }
 
 
