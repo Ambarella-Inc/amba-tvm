@@ -514,6 +514,28 @@ def test_expand_dims():
     verify_expand_dims((1, 1001), 0, 2)
     verify_expand_dims((1, 1, 1001), 2, 2)
 
+def test_resize():
+    def verify_resize(dshape, outsize, method, coord_trans_mode, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.image.resize(x, size=outsize, method=method, coordinate_transformation_mode=coord_trans_mode)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_resize", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640)]
+    osize = [(240,320), (960,1280)]
+    #method = ['nearest_neighbor', 'bilinear', 'bicubic']
+    method = ['nearest_neighbor', 'bilinear']
+    coord_trans_mode = ['half_pixel', 'align_corners', 'asymmetric']
+
+    for i in isize:
+        for o in osize:
+            for m in method:
+                for c in coord_trans_mode:
+                    if (m=='nearest_neighbor' and c in ['half_pixel', 'align_corners']):
+                        continue
+                    verify_resize(i, o, m, c)
+                    #print('Passed resize test case: (%s %s, %s, %s)' % (i, o, m, c))
 
 if __name__ == "__main__":
     test_add()
@@ -538,3 +560,4 @@ if __name__ == "__main__":
     test_layout_transform()
     test_clip()
     test_expand_dims()
+    test_resize()
