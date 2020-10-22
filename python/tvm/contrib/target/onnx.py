@@ -656,7 +656,7 @@ class Resize(OpConverter):
         else:
             raise Exception("Unknown coordinate_transformation_mode %s in Resize" % coord_trans)
 
-        size = attrs.get_str("size")
+        size = attrs.get_int_tuple("size")
 
         return {
             "mode": mode,
