@@ -64,10 +64,11 @@ class CV22Module : public runtime::ModuleNode {
 
       LOG(INFO) << "CV22Module GetFunction PackedFunc";
 
-      LOG(INFO) << "Filename: " << cv22_subgraphs_[name].filename;
+      std::string out_dir = "/tmp/test_amba/eval/";
 
-      std::string cmd = "evaluate.py --metagraph " + cv22_subgraphs_[name].filename;
-      std::string inp_dir = "/tmp/test_amba/";
+      std::string ambapb_fpath = out_dir + cv22_subgraphs_[name].filename + ".ambapb.fastckpt.onnx";
+      LOG(INFO) << "Filename: " << ambapb_fpath;
+      std::string cmd = "evaluate.py --metagraph " + ambapb_fpath;
 
       // Save inputs to file
       std::vector<std::string>& inputs = cv22_subgraphs_[name].inputs;
@@ -85,7 +86,7 @@ class CV22Module : public runtime::ModuleNode {
           }
           LOG(INFO) << "Size: " << buf_size;
 
-          std::string in_fname = inp_dir + inputs[i] + ".bin";
+          std::string in_fname = out_dir + inputs[i] + ".bin";
           std::ofstream fout;
           fout.open(in_fname, std::ios::binary);
           if (fout.is_open()) {
