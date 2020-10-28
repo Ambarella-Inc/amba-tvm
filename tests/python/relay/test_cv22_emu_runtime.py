@@ -20,6 +20,7 @@ import sys
 from os import makedirs, listdir
 from os.path import join, isdir
 from shutil import rmtree
+import numpy as np
 
 # tvm imports
 from tvm.contrib.tar import untar
@@ -33,7 +34,7 @@ class CV22_TVM_Emu_Runtime():
         self.logger = self._init_logger_(debuglevel=2)
 
         # create new tmpdir
-        self.tmpdir = '/tmp/test_amba/'
+        self.tmpdir = '/tmp/test_amba/eval/'
         self._create_dir_(self.tmpdir)
 
         # extract ambapb, .json, .lib and .params
@@ -80,7 +81,7 @@ class CV22_TVM_Emu_Runtime():
 
         for f in listdir(self.tmpdir):
             fpath = join(self.tmpdir,f)
-            if f.endswith('.json'):
+            if f.endswith('.json') and ('amba' not in f):
                 self.json_fname = fpath
             elif f.endswith('.so') and ('libtvm_runtime' not in f):
                 self.lib_fname = fpath
@@ -96,7 +97,11 @@ class CV22_TVM_Emu_Runtime():
         self.inputs_map = {}
         for i in inputs_arg:
             n,f = i.split('=')
-            self.inputs_map[n] = f
+
+            if isinstance(f, str):
+                self.inputs_map[n] = np.fromfile(f, count=-1, dtype=np.float32)
+            else:
+                self.inputs_map[n] = f
 
     def _run_model_(self):
         # initialize wrapper
@@ -111,8 +116,8 @@ class CV22_TVM_Emu_Runtime():
 def makerun(args):
     rt = CV22_TVM_Emu_Runtime(args.compiledmodel)
     rt.run(args.inputs)
-    rt.save_outputs
-    self.logger.info('Execution completed!')
+    #rt.save_outputs()
+    print('Execution completed!')
 
 import argparse
 

@@ -463,8 +463,16 @@ class CVFlowTVMWrapper():
                         rt_mod = tvm.contrib.graph_runtime.create(json, lib, ctx=tvm.cpu())
                         rt_mod.set_input(**params)
 
+                        cnt = 0
                         for name, data in inputs.items():
-                                rt_mod.set_input(name, data)
+                            # get shape from graph runtime
+                            # (TBD) input order assumed
+                            tmp = rt_mod.get_input(cnt)
+                            data = np.reshape(data, tmp.shape)
+
+                            rt_mod.set_input(name, data)
+
+                            cnt += 1
 
                         rt_mod.run()
                         num_outputs = rt_mod.get_num_outputs()

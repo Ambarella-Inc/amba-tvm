@@ -66,8 +66,17 @@ class CV22ModuleCodegen : public CSourceModuleCodegenBase {
 
     subgraph_attr_t attr = {};
 
-    // CVFlow compiler is expected to create ambapb
-    attr.filename = "/tmp/test_amba/prepare/" + sid + ".ambapb.fastckpt.onnx";
+    // CVFlow compiler is expected to create ambapb and cavalry binaries for each cv22 subgraph
+    // CV22_COMPILED_BNAMES is a comma separated list of file basenames
+    std::string cv22_compiled_bnames = this->getEnvVar("CV22_COMPILED_BNAMES");
+    if (cv22_compiled_bnames.empty()) {
+        LOG(ERROR) << "Env variable CV22_COMPILED_BNAMES not found";
+        exit(-1);
+    }
+    else {
+        LOG(INFO) << "Env variable CV22_COMPILED_BNAMES set to " << cv22_compiled_bnames << " by cvflow compiler";
+    }
+    attr.filename = cv22_compiled_bnames;
 
     // check if file exists
     std::ifstream f(attr.filename);

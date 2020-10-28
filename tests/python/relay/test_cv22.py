@@ -277,7 +277,7 @@ class CV22_TVM_Compilation():
         try:
             # cvflow imports
             import tvm.relay.op.contrib.cv22
-            from tvm.relay.backend.contrib.cv22 import PruneSubgraphs, PartitionsToModules, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
+            from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
 
             self.logger.debug('---------- Original Graph ----------')
             mod = transform.RemoveUnusedFunctions()(mod)
@@ -311,6 +311,8 @@ class CV22_TVM_Compilation():
             output_folder = join(self.tmpdir, 'prepare')
             makedirs(output_folder)
 
+            compiled_bnames = []
+
             module_list = PartitionsToModules(mod, compiler)
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
@@ -333,6 +335,11 @@ class CV22_TVM_Compilation():
                 cavalry_bin_fpath = join(self.tmpdir, output_folder, cavalry_bin_fname)
                 self._check_for_file_(cavalry_bin_fpath)
                 self.cavalry_bin_fpaths.append(cavalry_bin_fpath)
+
+                compiled_bnames.append(mod_name)
+
+            # set env variable CV22_COMPILED_BNAMES - to be used by codegen and runtime
+            set_env_variable('CV22_COMPILED_BNAMES', ','.join(compiled_bnames))
 
             # mode: EMULATOR or TARGET
             exe_mode = GetCvflowExecutionMode()
