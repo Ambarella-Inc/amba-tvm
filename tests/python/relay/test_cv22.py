@@ -18,9 +18,10 @@
 """Entry script for cv22 compilation"""
 
 import sys
-from os import makedirs, listdir, environ
+from os import makedirs, listdir, environ, urandom
 from os.path import exists, join, isdir, basename
 from shutil import rmtree
+import binascii
 import json
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -49,7 +50,11 @@ class CV22_TVM_Compilation():
         self.tmpdir = '/tmp/test_amba/'
         self._remove_tmp_dir_()
 
-        self.out_bname = 'compiled'
+        self.rand_id = binascii.b2a_hex(urandom(4)).decode("utf-8")
+        self.out_bname = 'compiled_' + self.rand_id
+
+        self.ambapb_fpaths = []
+        self.cavalry_bin_fpaths = []
 
         self.logger = self._init_logger_(debuglevel)
 
@@ -254,13 +259,9 @@ class CV22_TVM_Compilation():
     def _cv22_compilation_(self):
         json_fname, lib_fname, params_fname = self._compile_model_(self.module, self.params, 'cv22', self.input_config, self.out_bname)
 
-        cv22_bin_fname = join(self.tmpdir, 'prepare/cv22_0.ambapb.fastckpt.onnx')
-        self._check_for_file_(cv22_bin_fname)
-
-        cavalry_bin_fname = join(self.tmpdir, 'prepare/cv22_0.amba')
-        self._check_for_file_(cavalry_bin_fname)
-
-        self.output_files = [json_fname, lib_fname, params_fname, cv22_bin_fname, cavalry_bin_fname]
+        self.output_files = [json_fname, lib_fname, params_fname]
+        self.output_files.extend(self.ambapb_fpaths)
+        self.output_files.extend(self.cavalry_bin_fpaths)
 
     def _compile_model_(self, mod, params, compiler, input_config, output_basename):
         """
@@ -313,14 +314,25 @@ class CV22_TVM_Compilation():
             module_list = PartitionsToModules(mod, compiler)
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
-                onnx_model = to_onnx(module, {}, name)
+                mod_name = name + '_' + self.rand_id
+                onnx_model = to_onnx(module, {}, mod_name)
 
                 self.logger.info("---------- Invoking Cvflow Compilation ----------")
                 save_path = CvflowCompilation(model_proto=onnx_model, \
-                                              output_name=name, \
+                                              output_name=mod_name, \
                                               output_folder=output_folder, \
                                               input_config=input_config)
                 self.logger.info('Saved compiled model to: %s\n' % save_path)
+
+                ambapb_fname = mod_name + '.ambapb.fastckpt.onnx'
+                ambapb_fpath = join(self.tmpdir, output_folder, ambapb_fname)
+                self._check_for_file_(ambapb_fpath)
+                self.ambapb_fpaths.append(ambapb_fpath)
+
+                cavalry_bin_fname = mod_name + '.amba'
+                cavalry_bin_fpath = join(self.tmpdir, output_folder, cavalry_bin_fname)
+                self._check_for_file_(cavalry_bin_fpath)
+                self.cavalry_bin_fpaths.append(cavalry_bin_fpath)
 
             # mode: EMULATOR or TARGET
             exe_mode = GetCvflowExecutionMode()
