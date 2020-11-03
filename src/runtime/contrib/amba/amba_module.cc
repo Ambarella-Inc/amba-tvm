@@ -153,8 +153,7 @@ class AmbaModule : public runtime::ModuleNode {
     return io_args;
   }
 
-  /* AmbaDLTensor is for AmbaDevice,
-  * and ConvertToAmbaTensor should be done in BuildAmbaEngine() */
+  /* AmbaDLTensor is for AmbaDevice */
   void ConvertToAmbaTensor(DLTensor *dl_arg, AmbaDLTensor *amba_arg) {
     int size = 1;
     amba_arg->data_virt = dl_arg->data;
@@ -163,8 +162,7 @@ class AmbaModule : public runtime::ModuleNode {
     amba_arg->bits = dl_arg->dtype.bits;
     amba_arg->shape = dl_arg->shape;
 
-    /* TBD, for 1st step live mode, remove padding from vproc float
-    * output and copy it to TVM input args */
+    /* Tensor with no padding */
     size = 1;
     for (int i = 0; i < dl_arg->ndim; ++i) {
       size *= dl_arg->shape[i];
@@ -320,7 +318,7 @@ Module AmbaModuleCreate(
   for (const auto &graph_it: amba_subgraphs) {
     std::string func_name = graph_it.first;
     subgraphs[func_name] =  graph_it.second;
-    subgraphs[func_name].filename = func_name + ".amba";
+    subgraphs[func_name].filename = subgraphs[func_name].filename + ".amba";
   }
   auto n = make_object<AmbaModule>(subgraphs);
   return Module(n);
