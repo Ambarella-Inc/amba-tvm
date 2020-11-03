@@ -50,8 +50,14 @@ class CV22_TVM_Emu_Runtime():
         # run model
         self._run_model_()
 
-    def save_outputs(self, out_fname_dict):
-        pass
+    def save_outputs(self):
+        output_bname = 'output_'
+        cnt = 0
+        for o in self.outputs:
+            output_fname = output_bname + str(cnt) + '.bin'
+            out = o.flatten()
+            out.tofile(output_fname)
+            self.logger.info('Saved output file %s' % output_fname)
 
     ## private methods
 
@@ -116,7 +122,7 @@ class CV22_TVM_Emu_Runtime():
 def makerun(args):
     rt = CV22_TVM_Emu_Runtime(args.compiledmodel)
     rt.run(args.inputs)
-    #rt.save_outputs()
+    rt.save_outputs()
     print('Execution completed!')
 
 import argparse
