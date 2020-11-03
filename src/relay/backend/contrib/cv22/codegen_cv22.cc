@@ -78,9 +78,6 @@ class CV22ModuleCodegen : public CSourceModuleCodegenBase {
     }
     attr.filename = sid + "_" + cv22_rand_id;
 
-    // check if file exists
-    std::ifstream f(attr.filename);
-
     // input list
     for (size_t i = 0; i < func->params.size(); ++i) {
         attr.inputs.push_back(func->params[i]->name_hint());
