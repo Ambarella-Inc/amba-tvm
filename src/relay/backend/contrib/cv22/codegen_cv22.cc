@@ -67,16 +67,16 @@ class CV22ModuleCodegen : public CSourceModuleCodegenBase {
     subgraph_attr_t attr = {};
 
     // CVFlow compiler is expected to create ambapb and cavalry binaries for each cv22 subgraph
-    // CV22_COMPILED_BNAMES is a comma separated list of file basenames
-    std::string cv22_compiled_bnames = this->getEnvVar("CV22_COMPILED_BNAMES");
-    if (cv22_compiled_bnames.empty()) {
-        LOG(ERROR) << "Env variable CV22_COMPILED_BNAMES not found";
+    // CV22_RAND_ID is a random session id appended to all filenames
+    std::string cv22_rand_id = this->getEnvVar("CV22_RAND_ID");
+    if (cv22_rand_id.empty()) {
+        LOG(ERROR) << "Env variable CV22_RAND_ID not found";
         exit(-1);
     }
     else {
-        LOG(INFO) << "Env variable CV22_COMPILED_BNAMES set to " << cv22_compiled_bnames << " by cvflow compiler";
+        LOG(INFO) << "Env variable CV22_RAND_ID set to " << cv22_rand_id << " by cvflow compiler";
     }
-    attr.filename = cv22_compiled_bnames;
+    attr.filename = sid + "_" + cv22_rand_id;
 
     // check if file exists
     std::ifstream f(attr.filename);

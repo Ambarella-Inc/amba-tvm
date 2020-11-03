@@ -311,8 +311,6 @@ class CV22_TVM_Compilation():
             output_folder = join(self.tmpdir, 'prepare')
             makedirs(output_folder)
 
-            compiled_bnames = []
-
             module_list = PartitionsToModules(mod, compiler)
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
@@ -336,10 +334,8 @@ class CV22_TVM_Compilation():
                 self._check_for_file_(cavalry_bin_fpath)
                 self.cavalry_bin_fpaths.append(cavalry_bin_fpath)
 
-                compiled_bnames.append(mod_name)
-
             # set env variable CV22_COMPILED_BNAMES - to be used by codegen and runtime
-            set_env_variable('CV22_COMPILED_BNAMES', ','.join(compiled_bnames))
+            set_env_variable('CV22_RAND_ID', self.rand_id)
 
             # mode: EMULATOR or TARGET
             exe_mode = GetCvflowExecutionMode()
