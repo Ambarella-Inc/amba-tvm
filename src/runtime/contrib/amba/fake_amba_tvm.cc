@@ -19,6 +19,10 @@
 
 #include "amba_tvm.h"
 
+int GetAmbaTVMLibVersion(void)
+{
+  return AMBA_TVM_LIB_VERSION;
+}
 int InitAmbaTVM(void) {
   return 0;
 }
@@ -40,10 +44,11 @@ int GetAmbaEngineOutput(amba_engine_cfg_t *engine_cfg,
 int DeleteAmbaTVM(amba_engine_cfg_t *engine_cfgs, uint32_t num) {
   return 0;
 }
-
-int CheckAmbaEngineInputName(amba_engine_cfg_t * engine_cfg,const char * input_name) {
+int CheckAmbaEngineInputName(amba_engine_cfg_t * engine_cfg,
+  const char * input_name) {
   return 0;
 }
-int CheckAmbaEngineOutputName(amba_engine_cfg_t * engine_cfg,const char * output_name) {
+int CheckAmbaEngineOutputName(amba_engine_cfg_t * engine_cfg,
+  const char * output_name) {
   return 0;
 }
