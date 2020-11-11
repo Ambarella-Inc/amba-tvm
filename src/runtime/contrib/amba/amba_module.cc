@@ -36,9 +36,9 @@
 #include "../cv22/cv22_module.h"
 #include "amba_tvm.h"
 
+
 namespace tvm {
 namespace runtime {
-
 
 /*!
  * \brief Engine for target runtime.
@@ -67,6 +67,8 @@ class AmbaModule : public runtime::ModuleNode {
   explicit AmbaModule(
     const std::unordered_map<std::string, subgraph_attr_t>& amba_subgraphs)
     : amba_subgraphs_(amba_subgraphs) {
+    CHECK(GetAmbaTVMLibVersion() >= 0x1)
+      << "AmbaTVM library version should not be less than " << 0x1;
     // general init
     InitAmbaTVM();
   }
@@ -80,6 +82,8 @@ class AmbaModule : public runtime::ModuleNode {
       engine_cfgs.push_back(engine_cfg);
     }
     // deinit general mem and network mem
+    CHECK(GetAmbaTVMLibVersion() >= 0x1)
+      << "AmbaTVM library version should not be less than " << 0x1;
     DeleteAmbaTVM(engine_cfgs.data(), engine_cfgs.size());
   }
 
@@ -94,6 +98,8 @@ class AmbaModule : public runtime::ModuleNode {
 
     // Generate an external packed function
     return PackedFunc([this, name](tvm::TVMArgs args, tvm::TVMRetValue* rv) {
+      CHECK(GetAmbaTVMLibVersion() >= 0x1)
+        << "AmbaTVM library version should not be less than " << 0x1;
       RunAmbaCVFlow(name, args, rv);
       /*fprintf(stderr, "[ AmbaModule ] [ %s ] cvflow time: %d us\n",
         name.c_str(), (*rv).operator int());*/
