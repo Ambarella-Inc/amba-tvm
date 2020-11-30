@@ -24,6 +24,7 @@ from shutil import rmtree
 import binascii
 import json
 import logging
+import time
 logging.basicConfig(level=logging.DEBUG)
 
 # tvm imports
@@ -97,11 +98,16 @@ class CV22_TVM_Compilation():
 
         return log
 
+    def _running_on_service_(self):
+        return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ
+
     def _import_loader_(self):
         LOADER_SERVICE_PATH = '/compiler/neo_shared/modules/'
         LOADER_LOCAL_PATH = '/home/amba_tvm_release/'
 
-        if isdir(LOADER_SERVICE_PATH):
+        if self._running_on_service_():
+            while not isdir(LOADER_SERVICE_PATH):
+                time.sleep(5)
             self.logger.info('Loading loader from neo service')
             sys.path.append(LOADER_SERVICE_PATH)
         elif isdir(LOADER_LOCAL_PATH):
@@ -281,6 +287,10 @@ class CV22_TVM_Compilation():
 
             self.logger.debug('---------- Original Graph ----------')
             mod = transform.RemoveUnusedFunctions()(mod)
+            self.logger.debug(mod.astext(show_meta_data=False))
+
+            self.logger.debug("---------- Infer relay expression type ----------")
+            mod = transform.InferType()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
 
             self.logger.debug('---------- NHWC -> NCHW ----------')
