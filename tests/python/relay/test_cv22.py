@@ -24,6 +24,7 @@ from shutil import rmtree
 import binascii
 import json
 import logging
+import tarfile
 import time
 logging.basicConfig(level=logging.DEBUG)
 
@@ -32,7 +33,6 @@ import tvm
 from tvm import relay
 from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
-from tvm.contrib.tar import tar
 
 # onnx imports
 from tvm.contrib.target.onnx import to_onnx
@@ -56,6 +56,9 @@ class CV22_TVM_Compilation():
 
         self.ambapb_fpaths = []
         self.cavalry_bin_fpaths = []
+
+        self.output_files = []
+        self.amba_files = []
 
         self.logger = self._init_logger_(debuglevel)
 
@@ -216,7 +219,7 @@ class CV22_TVM_Compilation():
         ## (END) CONFIG STUFF
 
         # parse model file and convert to relay
-        self.module, self.params, self.aux_files = self._convert_model_to_relay_(model_files, input_shape)
+        self.module, self.params, self.aux_files, self.metadata = self._convert_model_to_relay_(model_files, input_shape)
 
         self.input_config = input_config
 
@@ -259,8 +262,9 @@ class CV22_TVM_Compilation():
         mod = conversion_dict['model_objects'][0]
         params = conversion_dict['model_objects'][1]
         aux_files = conversion_dict['aux_files']
+        metadata = conversion_dict['metadata']
 
-        return mod, params, aux_files 
+        return mod, params, aux_files, metadata 
 
     def _cv22_compilation_(self):
         json_fname, lib_fname, params_fname = self._compile_model_(self.module, self.params, 'cv22', self.input_config, self.out_bname)
@@ -365,13 +369,21 @@ class CV22_TVM_Compilation():
             self._error_(str(e))
 
     def _save_output_to_file_(self):
+        metadata_file = 'metadata.json'
+        self._save_dict_to_json_file_(metadata_file, self.metadata)
+
+        self.amba_files.extend([self.libtvm, metadata_file])
+
+        self.output_files.extend([self.aux_files])
 
         out_fname = self._get_output_fname_()
-
-        self.output_files.extend([self.libtvm, self.aux_files])
         self._save_output_(out_fname)
 
         return out_fname
+
+    def _save_dict_to_json_file_(self, json_fname, data):
+        with open(json_fname, 'w') as fp:
+            json.dump(data, fp)
 
     def _get_output_fname_(self):
         model_name = basename(self.model)
@@ -396,7 +408,16 @@ class CV22_TVM_Compilation():
                 flat_list.append(i)
         logging.info("{}".format(flat_list))
 
-        tar(tar_fname, flat_list)
+        amba_list = [f for f in self.amba_files if f is not None]
+
+        self._compress_(tar_fname, flat_list, amba_list)
+
+    def _compress_(self, tar_fname, flist, alist, amba_folder='amba_files/'):
+        with tarfile.open(tar_fname, 'w:gz') as tar:
+            for item in flist:
+                tar.add(item, arcname=basename(item))
+            for item in alist:
+                tar.add(item, arcname=join(amba_folder, basename(item)))
 
 
 def write_status(log, status):
