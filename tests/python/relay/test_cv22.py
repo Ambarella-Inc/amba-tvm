@@ -382,7 +382,7 @@ class CV22_TVM_Compilation():
             ct = CVFlowTVMWrapper(exe_mode, self.logger)
 
             # tvm compilation
-            ct.relay_build(mod)
+            ct.relay_build(mod, opt_level=3)
 
             # serialize
             json_fname, lib_fname, params_fname = ct.serialize(basename=output_basename)
