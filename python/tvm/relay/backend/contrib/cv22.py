@@ -275,7 +275,7 @@ def create_splits_json(dra_dict, primary_outputs, vp_name, output_folder, gs_rec
 def set_env_variable(key, value):
     os.environ[key] = value
 
-def CvflowCompilation(model_proto, output_name, output_folder, input_config=None):
+def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config=None):
 
     if not output_folder.endswith('/'):
          output_folder += '/'
@@ -304,6 +304,15 @@ def CvflowCompilation(model_proto, output_name, output_folder, input_config=None
 
     # create splits json file
     graphdesc_path = create_splits_json(dra_dict, primary_outputs, output_name, output_folder, gs_recs)
+
+    # update metadata (non service case) with the correct input and output info
+    if metadata:
+        for k,i in enumerate(primary_inputs):
+            metadata['Model']['Inputs'][k]['name'] = i
+            metadata['Model']['Inputs'][k]['shape'] = primary_inputs[i]
+        for k,o in enumerate(primary_outputs):
+            metadata['Model']['Outputs'][k]['name'] = o
+            metadata['Model']['Outputs'][k]['shape'] = primary_outputs[o]
 
     # set outputs list as env variable
     # this will be used by codegen
