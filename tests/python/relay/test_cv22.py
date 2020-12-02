@@ -369,12 +369,9 @@ class CV22_TVM_Compilation():
             self._error_(str(e))
 
     def _save_output_to_file_(self):
-        metadata_file = 'metadata.json'
+        metadata_file = join(self.tmpdir, 'metadata.json')
         self._save_dict_to_json_file_(metadata_file, self.metadata)
-
-        self.amba_files.extend([self.libtvm, metadata_file])
-
-        self.output_files.extend([self.aux_files])
+        self.amba_files.extend([self.libtvm, metadata_file, self.aux_files])
 
         out_fname = self._get_output_fname_()
         self._save_output_(out_fname)
@@ -398,7 +395,6 @@ class CV22_TVM_Compilation():
 
     def _save_output_(self, tar_fname):
         flist = [f for f in self.output_files if f is not None] 
-
         logging.info("{}".format(flist))
         flat_list = []
         for i in flist:
@@ -408,7 +404,15 @@ class CV22_TVM_Compilation():
                 flat_list.append(i)
         logging.info("{}".format(flat_list))
 
-        amba_list = [f for f in self.amba_files if f is not None]
+        alist = [f for f in self.amba_files if f is not None]
+        logging.info("{}".format(alist))
+        amba_list = []
+        for i in alist:
+            if isinstance(i, list):
+                amba_list.extend(i)
+            else:
+                amba_list.append(i)
+        logging.info("{}".format(amba_list))
 
         self._compress_(tar_fname, flat_list, amba_list)
 
