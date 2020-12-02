@@ -39,7 +39,7 @@ from tvm.contrib.target.onnx import to_onnx
 
 class CV22_TVM_Compilation():
 
-    def __init__(self, model_directory, cc_libtvm_path, debuglevel=2):
+    def __init__(self, model_directory, cc_libtvm_path, metadata_file, debuglevel=2):
         """
         model_directory: Directory containing model file (usually /compiler/). Output will be stored in the same directory
         cc_libtvm_path:  Path to cross-compiled libtvm_runtime.so file (usually /compiler/libtvm_runtime.so)
@@ -62,6 +62,9 @@ class CV22_TVM_Compilation():
 
         self.logger = self._init_logger_(debuglevel)
 
+        # check if compilation is running on service or locally
+        self.neo_service = self._running_on_service_()
+
         # import neo loader package either from service or locally
         self._import_loader_()
 
@@ -70,6 +73,9 @@ class CV22_TVM_Compilation():
 
         # check if all required files exist
         self.model = self._validate_input_files_()
+
+        # read metadata to dict
+        self.metadata = self._init_metadata_(metadata_file)
 
     def process(self):
         self._convert_to_relay_()
@@ -108,14 +114,16 @@ class CV22_TVM_Compilation():
         LOADER_SERVICE_PATH = '/compiler/neo_shared/modules/'
         LOADER_LOCAL_PATH = '/home/amba_tvm_release/'
 
-        if self._running_on_service_():
+        if self.neo_service:
             while not isdir(LOADER_SERVICE_PATH):
                 time.sleep(5)
             self.logger.info('Loading loader from neo service')
             sys.path.append(LOADER_SERVICE_PATH)
+
         elif isdir(LOADER_LOCAL_PATH):
             self.logger.info('Loading local loader')
             sys.path.append(LOADER_LOCAL_PATH)
+
         else:
             err = 'Unable to load neo loader locally (%s) or from neo service (%s)' % (LOADER_LOCAL_PATH, LOADER_SERVICE_PATH) 
             self._error_(err)
@@ -127,6 +135,17 @@ class CV22_TVM_Compilation():
         self._check_for_file_(self.libtvm)
 
         return model_file
+
+    def _init_metadata_(self, metadata_file):
+        # will be filled by neo service
+        if self.neo_service:
+            return {}
+
+        # load default metadata file
+        else:
+            self._check_for_file_(metadata_file)
+            with open(metadata_file) as f:
+                return json.load(f)
 
     def _get_model_file_(self):
         """
@@ -262,7 +281,11 @@ class CV22_TVM_Compilation():
         mod = conversion_dict['model_objects'][0]
         params = conversion_dict['model_objects'][1]
         aux_files = conversion_dict['aux_files']
-        metadata = conversion_dict['metadata']
+
+        if self.neo_service:
+            metadata = conversion_dict['metadata']
+        else:
+            metadata = self.metadata
 
         return mod, params, aux_files, metadata 
 
@@ -335,6 +358,7 @@ class CV22_TVM_Compilation():
                 save_path = CvflowCompilation(model_proto=onnx_model, \
                                               output_name=mod_name, \
                                               output_folder=output_folder, \
+                                              metadata=self.metadata, \
                                               input_config=input_config)
                 self.logger.info('Saved compiled model to: %s\n' % save_path)
 
@@ -380,7 +404,7 @@ class CV22_TVM_Compilation():
 
     def _save_dict_to_json_file_(self, json_fname, data):
         with open(json_fname, 'w') as fp:
-            json.dump(data, fp)
+            json.dump(data, fp, indent=1)
 
     def _get_output_fname_(self):
         model_name = basename(self.model)
@@ -436,7 +460,7 @@ def makerun(args):
         makedirs(args.modeldir)
 
     try:
-        c = CV22_TVM_Compilation(args.modeldir, args.libtvmpath)
+        c = CV22_TVM_Compilation(args.modeldir, args.libtvmpath, args.metadatapath)
         out_fname = c.process()
 
         # COMPILATION_COMPLETE
@@ -467,6 +491,10 @@ def main(args):
                         metavar='libtvm_runtime.so path',
                         help='Path to cross-compiled libtvm_runtime.so')
 
+    parser.add_argument('-m', '--metadatapath', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
+                        metavar='default metadata file path',
+                        help='Path to default metadata file')
+
     args = parser.parse_args(args)
 
     return (makerun(args))
@@ -474,5 +502,4 @@ def main(args):
 # Entry point
 if __name__ == '__main__':
     main(sys.argv[1:])
-
 
