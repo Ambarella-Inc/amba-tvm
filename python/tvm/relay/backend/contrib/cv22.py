@@ -307,12 +307,15 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     # update metadata (non service case) with the correct input and output info
     if metadata:
-        for k,i in enumerate(primary_inputs):
-            metadata['Model']['Inputs'][k]['name'] = i
-            metadata['Model']['Inputs'][k]['shape'] = primary_inputs[i]
-        for k,o in enumerate(primary_outputs):
-            metadata['Model']['Outputs'][k]['name'] = o
-            metadata['Model']['Outputs'][k]['shape'] = primary_outputs[o]
+        in_dtype = metadata['Model']['Inputs'][0]['dtype']
+        metadata['Model']['Inputs'] = []
+        for i,sh in primary_inputs.items():
+            metadata['Model']['Inputs'].append({'name':i, 'shape':sh, 'dtype':in_dtype})
+
+        out_dtype = metadata['Model']['Outputs'][0]['dtype']
+        metadata['Model']['Outputs'] = []
+        for o,sh in primary_outputs.items():
+            metadata['Model']['Outputs'].append({'name':o, 'shape':sh, 'dtype':out_dtype})
 
     # set outputs list as env variable
     # this will be used by codegen
@@ -395,9 +398,9 @@ class CVFlowTVMWrapper():
                 self._lib_fname    = None
                 self._params_fname = None
 
-        def relay_build(self, mod):
+        def relay_build(self, mod, opt_level=3):
 
-                with relay.build_config(opt_level=3, disabled_pass=["AlterOpLayout"]):
+                with relay.build_config(opt_level=opt_level, disabled_pass=["AlterOpLayout"]):
 
                         if self._mode == 'EMULATOR':
                                 self._json, self._lib, self._params =\
