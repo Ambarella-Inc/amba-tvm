@@ -393,9 +393,11 @@ class CV22_TVM_Compilation():
             self._error_(str(e))
 
     def _save_output_to_file_(self):
-        metadata_file = join(self.tmpdir, 'metadata.json')
+        metadata_file = join(self.tmpdir, self.out_bname + '.meta')
         self._save_dict_to_json_file_(metadata_file, self.metadata)
-        self.amba_files.extend([self.libtvm, metadata_file, self.aux_files])
+
+        self.output_files.extend([metadata_file])
+        self.amba_files.extend([self.libtvm, self.aux_files])
 
         out_fname = self._get_output_fname_()
         self._save_output_(out_fname)
