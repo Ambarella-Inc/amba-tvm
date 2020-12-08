@@ -39,13 +39,18 @@ from tvm.contrib.target.onnx import to_onnx
 
 class CV22_TVM_Compilation():
 
-    def __init__(self, model_directory, cc_libtvm_path, metadata_file, debuglevel=2):
+    def __init__(self, model_directory, prebuilt_bins_path, metadata_file, debuglevel=2):
         """
         model_directory: Directory containing model file (usually /compiler/). Output will be stored in the same directory
-        cc_libtvm_path:  Path to cross-compiled libtvm_runtime.so file (usually /compiler/libtvm_runtime.so)
+        prebuilt_bins_path: Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so
+        metadata_file: Path to default metadata file 
+        debuglevel: Debug level (default: 2))
         """
         self.dir    = model_directory
-        self.libtvm = cc_libtvm_path
+
+        self.prebuilt_bins_path = prebuilt_bins_path
+        self.prebuilt_bins = ['libamba_tvm.so', 'libtvm_runtime.so', 'libdlr.so']
+        self.prebuilt_bins_fpath = []
 
         # to store ambapb artefacts etc
         self.tmpdir = '/tmp/test_amba/'
@@ -132,7 +137,11 @@ class CV22_TVM_Compilation():
 
     def _validate_input_files_(self):
         model_file = self._get_model_file_()
-        self._check_for_file_(self.libtvm)
+
+        for f in self.prebuilt_bins:
+            fpath = join(self.prebuilt_bins_path, f)
+            self._check_for_file_(fpath)
+            self.prebuilt_bins_fpath.append(fpath)
 
         return model_file
 
@@ -401,7 +410,8 @@ class CV22_TVM_Compilation():
         self._save_dict_to_json_file_(metadata_file, self.metadata)
 
         self.output_files.extend([metadata_file])
-        self.amba_files.extend([self.libtvm, self.aux_files])
+        self.amba_files.extend(self.prebuilt_bins_fpath)
+        self.amba_files.extend([self.aux_files])
 
         out_fname = self._get_output_fname_()
         self._save_output_(out_fname)
@@ -462,15 +472,15 @@ def makerun(args):
 
     # this is catch the case when script is invoked without model or framework set
     # need /compiler/ folder to write out error message
-    if not isdir(args.modeldir):
-        makedirs(args.modeldir)
+    if not isdir(args.model_dir):
+        makedirs(args.model_dir)
 
     try:
-        c = CV22_TVM_Compilation(args.modeldir, args.libtvmpath, args.metadatapath)
+        c = CV22_TVM_Compilation(args.model_dir, args.prebuilt_binaries, args.metadata_path)
         out_fname = c.process()
 
         # COMPILATION_COMPLETE
-        write_status(join(args.modeldir,'COMPILATION_COMPLETE'), out_fname)
+        write_status(join(args.model_dir,'COMPILATION_COMPLETE'), out_fname)
 
         print('CV22 compilation successful!')
 
@@ -480,7 +490,7 @@ def makerun(args):
         err_str = 'AmbarellaError::' + str(e)
 
         # COMPILATION_FAILED
-        write_status(join(args.modeldir,'COMPILATION_FAILED'), err_str)
+        write_status(join(args.model_dir,'COMPILATION_FAILED'), err_str)
 
         print('CV22 compilation failed!')
 
@@ -489,16 +499,16 @@ import argparse
 def main(args):
     parser = argparse.ArgumentParser(description='Script to run tvm compilation for cv22')
 
-    parser.add_argument('-d', '--modeldir', type=str, required=False, default='/compiler/',
+    parser.add_argument('-d', '--model_dir', type=str, required=False, default='/compiler/',
                         metavar='Directory containing model file',
                         help='Directory containing input <model>.tar.gz')
 
-    parser.add_argument('-l', '--libtvmpath', type=str, required=False, default='/home/amba_tvm_release/cross_compiled/libtvm_runtime.so',
-                        metavar='libtvm_runtime.so path',
-                        help='Path to cross-compiled libtvm_runtime.so')
+    parser.add_argument('-p', '--prebuilt_binaries', type=str, required=False, default='/home/dlr/prebuild/amba/lib/',
+                        metavar='Folder containing pre-built binaries necessary for tvm / dlr compilation and runtime',
+                        help='Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so')
 
-    parser.add_argument('-m', '--metadatapath', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
-                        metavar='default metadata file path',
+    parser.add_argument('-m', '--metadata_path', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
+                        metavar='Default metadata file path',
                         help='Path to default metadata file')
 
     args = parser.parse_args(args)
