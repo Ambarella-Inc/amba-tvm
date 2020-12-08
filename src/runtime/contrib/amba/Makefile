@@ -20,7 +20,7 @@
 
 LOCAL_AMBA_SRC := fake_amba_tvm.cc
 LOCAL_AMBA_TARGET := libfamba_tvm.so
-LOCAL_AMBA_INC ?= /home/amba_tvm_release/include
+LOCAL_AMBA_INC ?= /home/dlr/prebuild/amba/include
 
 LOCAL_CFLAGS    := -shared -fPIC -I${LOCAL_AMBA_INC}
 
