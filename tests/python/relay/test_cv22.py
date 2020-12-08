@@ -158,6 +158,10 @@ class CV22_TVM_Compilation():
            The calib folder path is provided in config.json as filepath
         """
         model = []
+        if self._running_on_service_():
+            from neo_loader import find_archive
+            return find_archive()
+
         for f in listdir(self.dir):
             if f.endswith('.tar.gz') or f.endswith('.tar'):
                 model.append(join(self.dir, f))
