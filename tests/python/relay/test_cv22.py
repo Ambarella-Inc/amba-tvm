@@ -49,7 +49,7 @@ class CV22_TVM_Compilation():
         self.dir    = model_directory
 
         self.prebuilt_bins_path = prebuilt_bins_path
-        self.prebuilt_bins = ['libamba_tvm.so', 'libtvm_runtime.so', 'libdlr.so']
+        self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
         self.prebuilt_bins_fpath = []
 
         # to store ambapb artefacts etc
@@ -505,7 +505,7 @@ def main(args):
 
     parser.add_argument('-p', '--prebuilt_binaries', type=str, required=False, default='/home/dlr/prebuild/amba/lib/',
                         metavar='Folder containing pre-built binaries necessary for tvm / dlr compilation and runtime',
-                        help='Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so')
+                        help='Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so.*')
 
     parser.add_argument('-m', '--metadata_path', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
                         metavar='Default metadata file path',
