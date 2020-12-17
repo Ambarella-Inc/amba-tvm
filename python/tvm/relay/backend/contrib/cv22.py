@@ -307,15 +307,15 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     # update metadata (non service case) with the correct input and output info
     if metadata:
-        in_dtype = metadata['Model']['Inputs'][0]['dtype']
-        metadata['Model']['Inputs'] = []
+        in_dtype = metadata['Inputs'][0]['dtype']
+        metadata['Inputs'] = []
         for i,sh in primary_inputs.items():
-            metadata['Model']['Inputs'].append({'name':i, 'shape':sh, 'dtype':in_dtype})
+            metadata['Inputs'].append({'name':i, 'shape':sh, 'dtype':in_dtype})
 
-        out_dtype = metadata['Model']['Outputs'][0]['dtype']
-        metadata['Model']['Outputs'] = []
+        out_dtype = metadata['Outputs'][0]['dtype']
+        metadata['Outputs'] = []
         for o,sh in primary_outputs.items():
-            metadata['Model']['Outputs'].append({'name':o, 'shape':sh, 'dtype':out_dtype})
+            metadata['Outputs'].append({'name':o, 'shape':sh, 'dtype':out_dtype})
 
     # set outputs list as env variable
     # this will be used by codegen
