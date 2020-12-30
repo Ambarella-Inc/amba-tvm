@@ -146,15 +146,9 @@ class CV22_TVM_Compilation():
         return model_file
 
     def _init_metadata_(self, metadata_file):
-        # will be filled by neo service
-        if self.neo_service:
-            return {}
-
-        # load default metadata file
-        else:
-            self._check_for_file_(metadata_file)
-            with open(metadata_file) as f:
-                return json.load(f)
+        self._check_for_file_(metadata_file)
+        with open(metadata_file) as f:
+            return json.load(f)
 
     def _get_model_file_(self):
         """
@@ -276,7 +270,7 @@ class CV22_TVM_Compilation():
 
         else:
             return {
-                'metadata': loader.metadata, # shouldn't be needed
+                'metadata': loader.metadata,
                 'model_objects': loader.model_objects,
                 'aux_files': loader.aux_files # should be packaged with final archive
             }
@@ -296,7 +290,8 @@ class CV22_TVM_Compilation():
         aux_files = conversion_dict['aux_files']
 
         if self.neo_service:
-            metadata = conversion_dict['metadata']
+            # overwrite Model dict
+            metadata['Model'] = conversion_dict['metadata']
         else:
             metadata = self.metadata
 
@@ -371,7 +366,7 @@ class CV22_TVM_Compilation():
                 save_path = CvflowCompilation(model_proto=onnx_model, \
                                               output_name=mod_name, \
                                               output_folder=output_folder, \
-                                              metadata=self.metadata, \
+                                              metadata=self.metadata['Model'], \
                                               input_config=input_config)
                 self.logger.info('Saved compiled model to: %s\n' % save_path)
 
