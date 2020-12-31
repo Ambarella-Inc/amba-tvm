@@ -22,7 +22,7 @@ LOCAL_AMBA_SRC := fake_amba_tvm.cc
 LOCAL_AMBA_TARGET := libfamba_tvm.so
 LOCAL_AMBA_INC ?= /home/dlr/prebuild/amba/include
 
-LOCAL_CFLAGS    := -shared -fPIC -I${LOCAL_AMBA_INC}
+LOCAL_CFLAGS    := -std=c++11 -shared -fPIC -I${LOCAL_AMBA_INC}
 
 CXX := /usr/bin/c++
 STRIP := /usr/bin/strip

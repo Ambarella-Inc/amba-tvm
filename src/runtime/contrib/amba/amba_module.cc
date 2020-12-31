@@ -163,10 +163,15 @@ class AmbaModule : public runtime::ModuleNode {
   void ConvertToAmbaTensor(DLTensor *dl_arg, AmbaDLTensor *amba_arg) {
     int size = 1;
     amba_arg->data_virt = dl_arg->data;
-    amba_arg->data_phys = 0;
+    amba_arg->device_type = dl_arg->ctx.device_type;
+    amba_arg->device_id = dl_arg->ctx.device_id;
     amba_arg->ndim = dl_arg->ndim;
-    amba_arg->bits = dl_arg->dtype.bits;
+    amba_arg->dtype_code = dl_arg->dtype.code;
+    amba_arg->dtype_bits = dl_arg->dtype.bits;
+    amba_arg->dtype_lanes = dl_arg->dtype.lanes;
     amba_arg->shape = dl_arg->shape;
+    amba_arg->strides = dl_arg->strides;
+    amba_arg->byte_offset = dl_arg->byte_offset;
 
     /* Tensor with no padding */
     size = 1;
@@ -181,19 +186,49 @@ class AmbaModule : public runtime::ModuleNode {
     const std::string& name, subgraph_attr_t amba_subgraph) {
     AmbaEngineContext engine_ctx;
     amba_engine_cfg_t engine_cfg;
-
-    engine_cfg.engine_name = name.c_str();
-    engine_cfg.engine_filepath = amba_subgraph.filename.c_str();
-
-    InitAmbaEngine(&engine_cfg);
-    engine_ctx.engine_id_ = engine_cfg.engine_id;
-    engine_ctx.engine_name_ = name;
+    amba_engine_io_t  engine_input, engine_output;
+    std::vector<AmbaDLTensor> in_tensors, out_tensors;
+    std::vector<const char*> in_names, out_names;
+    int num_inputs  = amba_subgraph.inputs.size();
+    int num_outputs  = amba_subgraph.outputs.size();
 
     auto io_args = ConvertArgs(args);
 
-    // vector inputs has the same order as in args
-    int num_inputs  = amba_subgraph.inputs.size();
+    // engine cfg
+    engine_cfg.engine_name = name.c_str();
+    engine_cfg.engine_filepath = amba_subgraph.filename.c_str();
+
+    // engine input
+    in_tensors.resize(num_inputs);
+    in_names.resize(num_inputs);
     auto input_it = amba_subgraph.inputs.begin();
+    for (int i = 0; i < num_inputs; ++ i, ++ input_it) {
+      ConvertToAmbaTensor(io_args[i], &in_tensors[i]);
+      in_names[i] = input_it->c_str();
+    }
+    engine_input.num = num_inputs;
+    engine_input.tensors = in_tensors.data();
+    engine_input.names = in_names.data();
+
+    // engine output
+    out_tensors.resize(num_outputs);
+    out_names.resize(num_outputs);
+    auto output_it = amba_subgraph.outputs.begin();
+    const int entry_in_storage = io_args.size() - num_outputs;
+    for (int i = 0; i < num_outputs; ++ i, ++ output_it) {
+      ConvertToAmbaTensor(io_args[entry_in_storage + i], &out_tensors[i]);
+      out_names[i] = output_it->c_str();
+    }
+    engine_output.num = num_outputs;
+    engine_output.tensors = out_tensors.data();
+    engine_output.names = out_names.data();
+
+    InitAmbaEngine(&engine_cfg, &engine_input, &engine_output);
+    engine_ctx.engine_id_ = engine_cfg.engine_id;
+    engine_ctx.engine_name_ = name;
+
+    // vector inputs has the same order as in args
+    input_it = amba_subgraph.inputs.begin();
     for (int i = 0; i < num_inputs; ++ i, ++ input_it) {
       // check for safety
       if (CheckAmbaEngineInputName(&engine_cfg,
@@ -204,9 +239,7 @@ class AmbaModule : public runtime::ModuleNode {
     }
 
     // vector outputs has the same order as in args
-    int num_outputs  = amba_subgraph.outputs.size();
-    const int entry_in_storage = io_args.size() - num_outputs;
-    auto output_it = amba_subgraph.outputs.begin();
+    output_it = amba_subgraph.outputs.begin();
     for (int i = 0; i < num_outputs; ++ i, ++output_it) {
       // check for safety
       if (CheckAmbaEngineOutputName(&engine_cfg,

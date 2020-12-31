@@ -38,7 +38,8 @@ if(USE_AMBA_RUNTIME)
       endif()
     endif()
 
-    file(GLOB AMBA_CONTRIB_SRC src/runtime/contrib/amba/amba_module.cc)
+    file(GLOB AMBA_CONTRIB_SRC src/runtime/contrib/amba/amba_module.cc
+        src/runtime/contrib/amba/amba_device_api.cc)
     list(APPEND RUNTIME_SRCS ${AMBA_CONTRIB_SRC})
 
 endif()
