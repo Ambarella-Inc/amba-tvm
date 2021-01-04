@@ -77,7 +77,9 @@ PackedFunc WrapPackedFunc(TVMBackendPackedCFunc faddr, const ObjectPtr<Object>& 
     for (int32_t i = 0; i < args.size(); ++i) {
       if (args[i].type_code() == kTVMDLTensorHandle) {
         io_args[i] = args[i];
-        io_args[i]->ctx.device_type = kDLCPU;
+        if (io_args[i]->ctx.device_type == static_cast<DLDeviceType>(kDLAmba)) {
+          io_args[i]->ctx.device_type = kDLCPU;
+        }
       }
     }
     int ret = (*faddr)(const_cast<TVMValue*>(args.values), const_cast<int*>(args.type_codes),
