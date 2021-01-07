@@ -291,7 +291,15 @@ class CV22_TVM_Compilation():
 
         if self.neo_service:
             # overwrite Model dict
-            metadata['Model'] = conversion_dict['metadata']
+            metadata = {
+                'Requirements': {
+                    'TargetDevice': 'AMBARELLA_CV22'
+                },
+                'Compilation': {
+                    'CreatedTime': int(time.time())
+                },
+                'Model': conversion_dict['metadata']
+            }
         else:
             metadata = self.metadata
 
