@@ -31,7 +31,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "../../file_util.h"
+#include "../../file_utils.h"
 
 #include "../cv22/cv22_module.h"
 #include "amba_tvm.h"

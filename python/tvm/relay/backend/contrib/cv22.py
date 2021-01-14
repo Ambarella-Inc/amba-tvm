@@ -30,7 +30,7 @@ from enum import Enum
 import tvm
 from tvm import relay
 from tvm import topi
-from tvm.topi.util import get_const_tuple
+from tvm.topi.utils import get_const_tuple
 
 from tvm.relay.expr_functor import ExprMutator, ExprVisitor
 from tvm.relay.expr import Call, Constant, Tuple, GlobalVar

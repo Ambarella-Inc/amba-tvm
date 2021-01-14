@@ -32,7 +32,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "../../file_util.h"
+#include "../../file_utils.h"
 #include "cv22_module.h"
 
 namespace tvm {
