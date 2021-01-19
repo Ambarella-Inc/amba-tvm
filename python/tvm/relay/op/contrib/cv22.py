@@ -34,7 +34,7 @@ def _register_external_op_helper(op_name, supported=True):
         A function that returns if the operator is supported by CV22.
     """
     @tvm.ir.register_op_attr(op_name, "target.cv22")
-    def _func_wrapper(attrs):
+    def _func_wrapper(expr):
         return supported
 
     return _func_wrapper
