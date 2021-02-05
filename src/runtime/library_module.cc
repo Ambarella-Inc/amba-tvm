@@ -79,6 +79,7 @@ PackedFunc WrapPackedFunc(TVMBackendPackedCFunc faddr, const ObjectPtr<Object>& 
         io_args[i] = args[i];
         if (io_args[i]->ctx.device_type == static_cast<DLDeviceType>(kDLAmba)) {
           io_args[i]->ctx.device_type = kDLCPU;
+          io_args[i]->ctx.device_id = 0;
         }
       }
     }
