@@ -328,12 +328,12 @@ class CV22_TVM_Compilation():
             import tvm.relay.op.contrib.cv22
             from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
 
-            self.logger.debug('---------- Original Graph ----------')
-            mod = transform.RemoveUnusedFunctions()(mod)
-            self.logger.debug(mod.astext(show_meta_data=False))
-
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
+            self.logger.debug(mod.astext(show_meta_data=False))
+
+            self.logger.debug('---------- Original Graph ----------')
+            mod = transform.RemoveUnusedFunctions()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
 
             self.logger.debug('---------- NHWC -> NCHW ----------')
@@ -344,6 +344,8 @@ class CV22_TVM_Compilation():
             if params:
                 mod['main'] = bind_params_by_name(mod['main'], params)
             self.logger.debug(mod.astext(show_meta_data=False))
+
+            mod = transform.FoldConstant()(mod)
 
             self.logger.debug("---------- Annotated Graph ----------")
             mod = transform.AnnotateTarget(compiler)(mod)
@@ -357,8 +359,12 @@ class CV22_TVM_Compilation():
             mod = transform.PartitionGraph()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
 
+            self.logger.debug("---------- Infer relay expression type ----------")
+            mod = transform.InferType()(mod)
+            self.logger.debug(mod.astext(show_meta_data=False))
+
             self.logger.debug("---------- Pruned Graph ----------")
-            mod = PruneSubgraphs(mod, compiler, 1, self.logger)
+            mod = PruneSubgraphs(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
 
             output_folder = join(self.tmpdir, 'prepare')
@@ -398,7 +404,7 @@ class CV22_TVM_Compilation():
             ct = CVFlowTVMWrapper(exe_mode, self.logger)
 
             # tvm compilation
-            ct.relay_build(mod, opt_level=3)
+            ct.relay_build(mod, params, opt_level=3)
 
             # serialize
             json_fname, lib_fname, params_fname = ct.serialize(basename=output_basename)

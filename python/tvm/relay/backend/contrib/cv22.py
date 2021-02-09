@@ -70,57 +70,56 @@ class VarReplacer(ExprMutator):
             return self.var_map[var]
         return super().visit_var(var)
 
-class VarRenamer(ExprMutator):
-    def __init__(self, new_subgraph_name):
-        ExprMutator.__init__(self)
-        self.new_subgraph_name = new_subgraph_name
+def PruneSubgraphs(mod):
+    """
+    Removes invalid subgraphs and those with no multiply-accumulates (if remove_no_max_subgraphs
+    is set).
+    """
 
-    def visit_var(self, var):
-        if "_".join(var.name_hint.split('_')[:2]) != self.new_subgraph_name:
-            new_var_name = self.new_subgraph_name + "_" + var.name_hint.split('_')[2]
-            return relay.Var(new_var_name, var.checked_type)
-        return super().visit_var(var)
+    class SubgraphRemover(ExprMutator):
+        """
+        Reverts subgraphs in subgraphs_to_remove back to TVM instead of using an external codegen.
+        """
 
-class SubgraphRemover(ExprMutator):
-    def __init__(self, subgraphs_to_remove, mod, new_mod, rename_starting_from_0=True):
-        ExprVisitor.__init__(self)
-        self.subgraphs_to_remove = subgraphs_to_remove
-        self.mod = mod
-        self.new_mod = new_mod
-        self.rename_starting_from_0 = rename_starting_from_0
-        self.count = 0
+        def __init__(self, subgraphs_to_remove, mod, new_mod):
+            ExprMutator.__init__(self)
+            self.subgraphs_to_remove = subgraphs_to_remove
+            self.mod = mod
+            self.new_mod = new_mod
 
-    def visit_call(self, call):
-        if isinstance(call.op, GlobalVar):
-            name = call.op.name_hint
-            if name in self.subgraphs_to_remove:
-                # "Inline" the subgraph back into new main function.
-                func = self.mod[name]
-                var_map = {}
-                for arg, param in zip(call.args, func.params):
-                    var_map[param] = super().visit(arg)
-                new_body = VarReplacer(var_map).visit(func.body)
-                return new_body
-            elif name != "main":
-                # Copy the GlobalVar (subgraph function) to the new module and call.
-                if self.rename_starting_from_0:
-                    new_name = name.split('_')[0] + "_" + str(self.count)
-                    self.count += 1
-                else:
-                    new_name = name
-                args = []
-                for arg in call.args:
-                    args.append(super().visit(arg))
-                subgraph_gv = relay.GlobalVar(new_name)
-                if self.rename_starting_from_0:
-                    subgraph_func = VarRenamer(new_name).visit(self.mod[name])
-                    subgraph_func = subgraph_func.with_attr("global_symbol", new_name)
-                    self.new_mod[subgraph_gv] = subgraph_func
-                else:
-                    self.new_mod[subgraph_gv] = self.mod[name]
-                return subgraph_gv(*args)
-        return super().visit_call(call)
+        def visit_call(self, call):
+            if isinstance(call.op, GlobalVar):
+                name = call.op.name_hint
+                if name in self.subgraphs_to_remove:
+                    # "Inline" the subgraph back into new main function.
+                    func = self.mod[name]
+                    var_map = {}
+                    for arg, param in zip(call.args, func.params):
+                        var_map[param] = super().visit(arg)
+                    new_body = relay.bind(func.body, var_map)
+                    return new_body
+                if name != "main":
+                    args = []
+                    for arg in call.args:
+                        args.append(super().visit(arg))
+                    return call.op(*args)
+            return super().visit_call(call)
 
+    subgraphs_to_remove = []
+    # Remove invalid subgraphs
+    for subgraph in mod.get_global_vars():
+        name = subgraph.name_hint
+        if (not mod[name].attrs) or (mod[name].attrs["Compiler"] != "cv22") or ("cv22" not in name):
+            continue
+        else:
+            subgraphs_to_remove.append(name)
+
+    subgraphs_to_remove = subgraphs_to_remove[:-1]
+    # Create new pruned module
+    new_mod = tvm.IRModule(mod.functions, mod.type_definitions)
+    new_mod["main"] = SubgraphRemover(subgraphs_to_remove, mod, new_mod).visit(mod["main"])
+    return new_mod
+    
 '''
 def PruneSubgraphsWithMoreThanOneInput(mod, compiler="cv22"):
     subgraph_names_to_remove = []
@@ -138,49 +137,16 @@ def PruneSubgraphsWithMoreThanOneInput(mod, compiler="cv22"):
     return new_mod
 '''
 
-def PruneSubgraphs(mod, compiler, num_subgraphs_to_keep, logger=None):
-    subgraph_with_macs = []
-    for subgraph in mod.get_global_vars():
-        name = subgraph.name_hint
-        if not mod[name].attrs or mod[name].attrs["Compiler"] != compiler:
-            continue
-        num_macs = relay.analysis.get_total_mac_number(mod[name])
-        subgraph_with_macs.append([name, num_macs])
-    subgraph_with_macs = sorted(subgraph_with_macs, key=lambda x: int(x[1]))
-
-    if logger is not None:
-        logger.debug("[PruneSubgraphs] Subgraphs with computed # of MACS: %s" % subgraph_with_macs)
-    else:
-        print("[PruneSubgraphs] Subgraphs with computed # of MACS: %s" % subgraph_with_macs)
-
-    subgraphs_to_remove = subgraph_with_macs[:-num_subgraphs_to_keep]
-    '''
-    subgraphs_to_remove = []
-    for s in subgraph_with_macs:
-        if not s[0] == 'cv22_0':
-            subgraphs_to_remove.append(s)
-    '''
-
-    if logger is not None:
-        logger.debug("[PruneSubgraphs] Will remove these subgraphs: %s" % subgraphs_to_remove)
-    else:
-        print("[PruneSubgraphs] Will remove these subgraphs: %s" % subgraphs_to_remove)
-
-    subgraph_names_to_remove = set([x[0] for x in subgraphs_to_remove])
-    # Create new pruned module
-    new_mod = tvm.IRModule()
-    new_mod["main"] = SubgraphRemover(subgraph_names_to_remove, mod, new_mod).visit(mod["main"])
-    return new_mod
-
 def PartitionsToModules(mod, compiler):
         module_dict = {}
         for func in mod.get_global_vars():
                 name = func.name_hint
-                if compiler in name:
-                        mod = tvm.IRModule.from_expr(mod[name])
-                        new_mod = tvm.ir.module.IRModule()
-                        new_mod['main'] = mod[name]
-                        module_dict[name] = new_mod
+                if (not mod[name].attrs) or (mod[name].attrs["Compiler"] == compiler) and (not mod[name].attrs["Inline"]):
+                        if compiler in name:
+                            mod = tvm.IRModule.from_expr(mod[name])
+                            new_mod = tvm.ir.module.IRModule()
+                            new_mod['main'] = mod[name]
+                            module_dict[name] = new_mod
 
         return module_dict
 
@@ -398,19 +364,19 @@ class CVFlowTVMWrapper():
                 self._lib_fname    = None
                 self._params_fname = None
 
-        def relay_build(self, mod, opt_level=3):
+        def relay_build(self, mod, params, opt_level=3):
 
-                with relay.build_config(opt_level=opt_level, disabled_pass=["AlterOpLayout"]):
+                with relay.build_config(opt_level=opt_level):#, disabled_pass=["AlterOpLayout"]):
 
                         if self._mode == 'EMULATOR':
-                                self._json, self._lib, self._params =\
-                                        relay.build(mod, target='llvm')
-                                self._logger.info('[CVFlowTVMWrapper] info: relay build for emulator complete')
+                            self._json, self._lib, self._params =\
+                                        relay.build(mod, target='llvm', params=params)
+                            self._logger.info('[CVFlowTVMWrapper] info: relay build for emulator complete')
 
                         else:
-                                self._json, self._lib, self._params = \
-                                        relay.build(mod, target='llvm -device=arm_cpu -mtriple=aarch64-linux-gnu')
-                                self._logger.info('[CVFlowTVMWrapper] info: relay build for target complete')
+                            self._json, self._lib, self._params = \
+                                        relay.build(mod, target='llvm -device=arm_cpu -mtriple=aarch64-linux-gnu', params=params)
+                            self._logger.info('[CVFlowTVMWrapper] info: relay build for target complete')
 
         def serialize(self, basename='compiled'):
 
