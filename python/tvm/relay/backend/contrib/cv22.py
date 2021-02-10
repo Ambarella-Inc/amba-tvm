@@ -364,6 +364,13 @@ class CVFlowTVMWrapper():
                 self._lib_fname    = None
                 self._params_fname = None
 
+        def relayvm_build(self, mod, params, opt_level=3, ):
+            with tvm.transform.PassContext(opt_level=opt_level, disabled_pass=["FoldScaleAxis", "AlterOpLayout"]):
+                #print(mod["main"])
+                #mod = relay.transform.InferType()(mod)
+                vm_exec = relay.vm.compile(mod, target="llvm", params=params)
+                self._json, self._lib = vm_exec.save()
+
         def relay_build(self, mod, params, opt_level=3):
 
                 with relay.build_config(opt_level=opt_level):#, disabled_pass=["AlterOpLayout"]):
