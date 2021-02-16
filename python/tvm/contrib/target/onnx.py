@@ -317,7 +317,40 @@ class ReduceMean(OpConverter):
         )
         model_container.add_nodes([node])
 
+class ReduceMin(OpConverter):
+    """Operator converter for Min."""
 
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {
+            "axes": attrs.axis,
+            "keepdims": 0 if bool(attrs.get_int("keepdims", 0)) is False else 1,
+        }
+
+    @classmethod
+    def convert(cls, node_entry, model_container, node_dict):
+        input_node = node_dict[node_entry["inputs"][0]]
+        assert len(input_node) == 1, "input node can not be a Tuple"
+        input_node = input_node[0]
+        shape = input_node["types"][0].shape
+        axis = node_entry["relay_node"].attrs.axis
+        axis = list(range(shape.size())) if not axis else tvm_array_to_list(axis)
+        exclude = 0 if not bool(node_entry["relay_node"].attrs.exclude) else 1
+        keepdims = 0 if not bool(node_entry["relay_node"].attrs.keepdims) else 1
+        if exclude:
+            all_axis = list(range(len(shape)))
+            axis = set(all_axis) - set(axis)
+
+        node = onnx.helper.make_node(
+            cls.__name__,
+            node_entry["input_names"],
+            node_entry["output_names"],
+            axes=axis,
+            keepdims=keepdims,
+        )
+        model_container.add_nodes([node])
+
+        
 class Pad(OpConverter):
     """Operator converter for Pad."""
 
@@ -732,6 +765,7 @@ relay_to_onnx_op_mapping = {
     "expand_dims": Expand,
     "nn.lrn": LRN,
     "image.resize": Resize,
+    "min": ReduceMin,
 }
 
 

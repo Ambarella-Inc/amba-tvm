@@ -105,19 +105,25 @@ def PruneSubgraphs(mod):
                     return call.op(*args)
             return super().visit_call(call)
 
-    subgraphs_to_remove = []
+    subgraphs_with_macs = []
     # Remove invalid subgraphs
     for subgraph in mod.get_global_vars():
         name = subgraph.name_hint
+
         if (not mod[name].attrs) or (mod[name].attrs["Compiler"] != "cv22") or ("cv22" not in name):
             continue
         else:
-            subgraphs_to_remove.append(name)
+            num_macs = relay.analysis.get_total_mac_number(mod[name])
+            subgraphs_with_macs.append([name, num_macs])
 
-    subgraphs_to_remove = subgraphs_to_remove[:-1]
+    subgraphs_with_macs = sorted(subgraphs_with_macs, key=lambda x: int(x[1]))
+    subgraphs_to_remove = subgraphs_with_macs[:-1]
+
+    subgraphs_names_to_remove = {x[0] for x in subgraphs_to_remove}
+    
     # Create new pruned module
     new_mod = tvm.IRModule(mod.functions, mod.type_definitions)
-    new_mod["main"] = SubgraphRemover(subgraphs_to_remove, mod, new_mod).visit(mod["main"])
+    new_mod["main"] = SubgraphRemover(subgraphs_names_to_remove, mod, new_mod).visit(mod["main"])
     return new_mod
     
 '''
@@ -139,16 +145,39 @@ def PruneSubgraphsWithMoreThanOneInput(mod, compiler="cv22"):
 
 def PartitionsToModules(mod, compiler):
         module_dict = {}
+    
         for func in mod.get_global_vars():
+            try:
                 name = func.name_hint
-                if (not mod[name].attrs) or (mod[name].attrs["Compiler"] == compiler) and (not mod[name].attrs["Inline"]):
-                        if compiler in name:
-                            mod = tvm.IRModule.from_expr(mod[name])
-                            new_mod = tvm.ir.module.IRModule()
-                            new_mod['main'] = mod[name]
-                            module_dict[name] = new_mod
-
+                name = str(name)
+                                
+                #if (not mod[name].attrs) or (mod[name].attrs["Compiler"] == compiler)) and (not mod[name].attrs["Inline"]):
+                if (not mod[name].attrs) or (mod[name].attrs["Compiler"] == compiler):
+                    if compiler in name:                        
+                        tempmod = tvm.IRModule.from_expr(mod[name])
+                        new_mod = tvm.ir.module.IRModule()
+                        new_mod['main'] = tempmod[name]
+                        module_dict[name] = new_mod
+                        
+            except Exception as e:
+                print(e)
+                        
         return module_dict
+
+def PartitionOneToModule(mod, compiler):
+    module_dict = {}
+    
+    temp_strmod = mod['main'].__str__()
+    callindex = temp_strmod.find('@cv22')
+    callendindex = temp_strmod.find('(', callindex)
+    
+    name = temp_strmod[callindex+1:callendindex]
+    tempmod = tvm.IRModule.from_expr(mod[name])
+    new_mod = tvm.ir.module.IRModule()
+    new_mod['main'] = tempmod[name]
+    module_dict[name] = new_mod
+        
+    return module_dict
 
 class tags(Enum):
     SHAPE = 'shape'

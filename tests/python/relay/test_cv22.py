@@ -326,8 +326,8 @@ class CV22_TVM_Compilation():
         try:
             # cvflow imports
             import tvm.relay.op.contrib.cv22
-            from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
-
+            from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, PartitionOneToModule, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
+            
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
@@ -346,31 +346,32 @@ class CV22_TVM_Compilation():
             self.logger.debug(mod.astext(show_meta_data=False))
 
             mod = transform.FoldConstant()(mod)
-
+                
             self.logger.debug("---------- Annotated Graph ----------")
             mod = transform.AnnotateTarget(compiler)(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
+            
             self.logger.debug("---------- Merge Compiler Regions ----------")
             mod = transform.MergeCompilerRegions()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
+            
             self.logger.debug("---------- Partioned Graph ----------")
             mod = transform.PartitionGraph()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
+            
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
+            
             self.logger.debug("---------- Pruned Graph ----------")
             mod = PruneSubgraphs(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
 
             output_folder = join(self.tmpdir, 'prepare')
             makedirs(output_folder)
+            
+            module_list = PartitionOneToModule(mod, compiler)
 
-            module_list = PartitionsToModules(mod, compiler)
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
                 mod_name = name + '_' + self.rand_id
