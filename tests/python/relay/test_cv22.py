@@ -369,13 +369,8 @@ class CV22_TVM_Compilation():
             self.logger.debug("---------- Pruned Graph ----------")
             mod = PruneSubgraphs(mod, prune_first=True)
             self.logger.debug(mod.astext(show_meta_data=False))
-            print('pruned')
-            print(mod)
             
             module_list = PartitionOneToModule(mod, compiler)
-            print('module list')
-            print(len(module_list))
-            print('check module list')
 
             output_folder = join(self.tmpdir, 'prepare')
             makedirs(output_folder)
@@ -383,7 +378,7 @@ class CV22_TVM_Compilation():
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
                 mod_name = name + '_' + self.rand_id
-                onnx_model = to_onnx(module, {}, mod_name)
+                onnx_model = to_onnx(module, {}, mod_name, path='cv22_model.onnx')
 
                 self.logger.info("---------- Invoking Cvflow Compilation ----------")
                 save_path = CvflowCompilation(model_proto=onnx_model, \
