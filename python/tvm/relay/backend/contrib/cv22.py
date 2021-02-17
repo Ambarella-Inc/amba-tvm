@@ -420,7 +420,8 @@ class CVFlowTVMWrapper():
         def relayvm_build(self, mod, params, opt_level=3):
             with tvm.transform.PassContext(opt_level=opt_level, disabled_pass=["FoldScaleAxis", "AlterOpLayout"]):
                 #mod = relay.transform.InferType()(mod)
-                vm_exec = relay.vm.compile(mod, target="llvm", params=params)
+                vm_exec = relay.vm.compile(mod, target="llvm -device=arm_cpu -mtriple=aarch64-linux-gnu", params=params)
+                #vm_exec = relay.vm.compile(mod, target="llvm", params=params)
                 self._json, self._lib = vm_exec.save()
 
         def relay_build(self, mod, params, opt_level=3):
@@ -441,12 +442,13 @@ class CVFlowTVMWrapper():
 
                 self._json_fname   = basename + '.json'
                 self._lib_fname    = basename + '.so'
-                self._params_fname = basename + '.params'
 
                 with open(self._json_fname, 'wb') as f_graph_json:
                         f_graph_json.write(self._json)
 
+                self._params_fname = None
                 if self._params is not None:
+                        self._params_fname = basename + '.params'
                         with open(self._params_fname, 'wb') as f_params:
                                 f_params.write(relay.save_param_dict(self._params))
 

@@ -84,10 +84,6 @@ class CV22_TVM_Compilation():
 
     def process(self):
         self._convert_to_relay_()
-        #self.module = "temp"
-        #self.params = "temp"
-        #self.input_config = "temp"
-
         self._cv22_compilation_()
         out_fname = self._save_output_to_file_()
 
