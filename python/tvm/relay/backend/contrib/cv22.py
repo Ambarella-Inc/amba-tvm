@@ -70,7 +70,16 @@ class VarReplacer(ExprMutator):
             return self.var_map[var]
         return super().visit_var(var)
 
-def PruneSubgraphs(mod):
+def get_first_subgraph(mod):
+    temp_strmod = mod['main'].__str__()
+    callindex = temp_strmod.find('@cv22')
+    callendindex = temp_strmod.find('(', callindex)
+    
+    name = temp_strmod[callindex+1:callendindex]
+    
+    return name
+    
+def PruneSubgraphs(mod, prune_first=False):
     """
     Removes invalid subgraphs and those with no multiply-accumulates (if remove_no_max_subgraphs
     is set).
@@ -107,6 +116,10 @@ def PruneSubgraphs(mod):
 
     subgraphs_with_macs = []
     # Remove invalid subgraphs
+
+    print('in prune subs')
+    print(mod.get_global_vars())
+    
     for subgraph in mod.get_global_vars():
         name = subgraph.name_hint
 
@@ -116,10 +129,21 @@ def PruneSubgraphs(mod):
             num_macs = relay.analysis.get_total_mac_number(mod[name])
             subgraphs_with_macs.append([name, num_macs])
 
-    subgraphs_with_macs = sorted(subgraphs_with_macs, key=lambda x: int(x[1]))
-    subgraphs_to_remove = subgraphs_with_macs[:-1]
+    if prune_first:
+        first_subgraph = get_first_subgraph(mod)
+        subgraphs_names_to_remove = {x[0] for x in subgraphs_with_macs}
+        print(type(subgraphs_names_to_remove))
+        #input('check')
+        subgraph_to_keep = subgraphs_names_to_remove.remove(first_subgraph)
 
-    subgraphs_names_to_remove = {x[0] for x in subgraphs_to_remove}
+        print('check first')
+        print(subgraphs_names_to_remove)
+        print('check nonremove')
+        print(subgraph_to_keep)
+    else:
+        subgraphs_with_macs = sorted(subgraphs_with_macs, key=lambda x: int(x[1]))
+        subgraphs_to_remove = subgraphs_with_macs[:-1]
+        subgraphs_names_to_remove = {x[0] for x in subgraphs_to_remove}
     
     # Create new pruned module
     new_mod = tvm.IRModule(mod.functions, mod.type_definitions)
@@ -170,7 +194,7 @@ def PartitionOneToModule(mod, compiler):
     temp_strmod = mod['main'].__str__()
     callindex = temp_strmod.find('@cv22')
     callendindex = temp_strmod.find('(', callindex)
-    
+
     name = temp_strmod[callindex+1:callendindex]
     tempmod = tvm.IRModule.from_expr(mod[name])
     new_mod = tvm.ir.module.IRModule()

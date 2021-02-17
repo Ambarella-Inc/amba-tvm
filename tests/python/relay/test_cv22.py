@@ -84,6 +84,10 @@ class CV22_TVM_Compilation():
 
     def process(self):
         self._convert_to_relay_()
+        #self.module = "temp"
+        #self.params = "temp"
+        #self.input_config = "temp"
+
         self._cv22_compilation_()
         out_fname = self._save_output_to_file_()
 
@@ -327,7 +331,7 @@ class CV22_TVM_Compilation():
             # cvflow imports
             import tvm.relay.op.contrib.cv22
             from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, PartitionOneToModule, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
-            
+            #"""
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
@@ -346,31 +350,88 @@ class CV22_TVM_Compilation():
             self.logger.debug(mod.astext(show_meta_data=False))
 
             mod = transform.FoldConstant()(mod)
-                
+
+            #with open('noannomod3.mod', "w") as fo:
+            #    fo.write(tvm.ir.save_json(mod))
+            #"""
+
+            #with open('noannomod2.mod', "r") as fi:
+            #    mod = tvm.ir.load_json(fi.read())
+
+            #print('loaded mod')
+            #print(mod)
+            #"""   
             self.logger.debug("---------- Annotated Graph ----------")
             mod = transform.AnnotateTarget(compiler)(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
+
+            print('anno')
             
             self.logger.debug("---------- Merge Compiler Regions ----------")
             mod = transform.MergeCompilerRegions()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
+
+            print('merged')
             
             self.logger.debug("---------- Partioned Graph ----------")
             mod = transform.PartitionGraph()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
+
+            print('parted')
             
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
+            #"""
+            
+            #with open('noprunemod3.mod', "w") as fo:
+            #    fo.write(tvm.ir.save_json(mod))
+            
+            #with open('noprunemod3.mod', "r") as fi:
+            #    mod = tvm.ir.load_json(fi.read())
+
+            #mod = newmod
+
+            #prepruned_mod = newmod
+
+            print('testing global var')
+            print(mod.get_global_vars())
+            print('check rand gv')
+            #print(mod['cv22_308_220'])
+            #input('checking this')
+            
+            print('pre pruned')
+            print(mod)
             
             self.logger.debug("---------- Pruned Graph ----------")
-            mod = PruneSubgraphs(mod)
+            mod = PruneSubgraphs(mod, prune_first=True)
+
+            
+            
             self.logger.debug(mod.astext(show_meta_data=False))
 
             output_folder = join(self.tmpdir, 'prepare')
             makedirs(output_folder)
             
+            #with open('tempmod1.mod', "w") as fo:
+            #    fo.write(tvm.ir.save_json(mod))
+
+            #with open('tempmod.mod', "r") as fi:
+            #    newmod = tvm.ir.load_json(fi.read())
+
+            #mod = newmod
+
+            print('pruned')
+            print(mod)
+
+            print('trying this again')
+            #print(prepruned_mod['cv22_308_220'])    
+            
             module_list = PartitionOneToModule(mod, compiler)
+            print('module list')
+            #print([module_list[0], module_list[-1]])
+            print(len(module_list))
+            print('check module list')
 
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
@@ -395,6 +456,9 @@ class CV22_TVM_Compilation():
                 self._check_for_file_(cavalry_bin_fpath)
                 self.cavalry_bin_fpaths.append(cavalry_bin_fpath)
 
+            #REMOVE THIS
+            #return
+            
             # set env variable CV22_COMPILED_BNAMES - to be used by codegen and runtime
             set_env_variable('CV22_RAND_ID', self.rand_id)
 
