@@ -312,7 +312,10 @@ class CV22_TVM_Compilation():
     def _cv22_compilation_(self):
         json_fname, lib_fname, params_fname = self._compile_model_(self.module, self.params, 'cv22', self.input_config, self.out_bname)
 
-        self.output_files = [json_fname, lib_fname, params_fname]
+        self.output_files = [json_fname, lib_fname]
+        if params_fname is not None:
+            self.output_files.append(params_fname)
+
         self.output_files.extend(self.ambapb_fpaths)
         self.output_files.extend(self.cavalry_bin_fpaths)
 
@@ -364,20 +367,14 @@ class CV22_TVM_Compilation():
             self.logger.debug("---------- Annotated Graph ----------")
             mod = transform.AnnotateTarget(compiler)(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
-            print('anno')
             
             self.logger.debug("---------- Merge Compiler Regions ----------")
             mod = transform.MergeCompilerRegions()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
-            print('merged')
             
             self.logger.debug("---------- Partioned Graph ----------")
             mod = transform.PartitionGraph()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
-
-            print('parted')
             
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
@@ -405,9 +402,6 @@ class CV22_TVM_Compilation():
             
             self.logger.debug("---------- Pruned Graph ----------")
             mod = PruneSubgraphs(mod, prune_first=True)
-
-            
-            
             self.logger.debug(mod.astext(show_meta_data=False))
 
             output_folder = join(self.tmpdir, 'prepare')
@@ -455,9 +449,6 @@ class CV22_TVM_Compilation():
                 cavalry_bin_fpath = join(self.tmpdir, output_folder, cavalry_bin_fname)
                 self._check_for_file_(cavalry_bin_fpath)
                 self.cavalry_bin_fpaths.append(cavalry_bin_fpath)
-
-            #REMOVE THIS
-            #return
             
             # set env variable CV22_COMPILED_BNAMES - to be used by codegen and runtime
             set_env_variable('CV22_RAND_ID', self.rand_id)
@@ -470,7 +461,6 @@ class CV22_TVM_Compilation():
 
             # tvm compilation
             #ct.relay_build(mod, params, opt_level=3)
-
             # TODO: Need to add logic to determine to use vm or graph compilation api
             ct.relayvm_build(mod, params, opt_level=3)
 

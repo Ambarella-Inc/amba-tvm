@@ -417,9 +417,8 @@ class CVFlowTVMWrapper():
                 self._lib_fname    = None
                 self._params_fname = None
 
-        def relayvm_build(self, mod, params, opt_level=3, ):
+        def relayvm_build(self, mod, params, opt_level=3):
             with tvm.transform.PassContext(opt_level=opt_level, disabled_pass=["FoldScaleAxis", "AlterOpLayout"]):
-                #print(mod["main"])
                 #mod = relay.transform.InferType()(mod)
                 vm_exec = relay.vm.compile(mod, target="llvm", params=params)
                 self._json, self._lib = vm_exec.save()
@@ -444,11 +443,12 @@ class CVFlowTVMWrapper():
                 self._lib_fname    = basename + '.so'
                 self._params_fname = basename + '.params'
 
-                with open(self._json_fname, 'w') as f_graph_json:
+                with open(self._json_fname, 'wb') as f_graph_json:
                         f_graph_json.write(self._json)
 
-                with open(self._params_fname, 'wb') as f_params:
-                        f_params.write(relay.save_param_dict(self._params))
+                if self._params is not None:
+                        with open(self._params_fname, 'wb') as f_params:
+                                f_params.write(relay.save_param_dict(self._params))
 
                 if self._mode == 'EMULATOR':
                         self._lib.export_library(self._lib_fname)
