@@ -408,9 +408,10 @@ class CV22_TVM_Compilation():
             ct = CVFlowTVMWrapper(exe_mode, self.logger)
 
             # tvm compilation
-            #ct.relay_build(mod, params, opt_level=3)
+            ct.relay_build(mod, params, opt_level=3)
+
             # TODO: Need to add logic to determine to use vm or graph compilation api
-            ct.relayvm_build(mod, params, opt_level=3)
+            #ct.relayvm_build(mod, params, opt_level=3)
 
             # serialize
             json_fname, lib_fname, params_fname = ct.serialize(basename=output_basename)

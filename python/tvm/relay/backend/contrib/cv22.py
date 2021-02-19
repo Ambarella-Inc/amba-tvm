@@ -443,7 +443,7 @@ class CVFlowTVMWrapper():
                 self._json_fname   = basename + '.json'
                 self._lib_fname    = basename + '.so'
 
-                with open(self._json_fname, 'wb') as f_graph_json:
+                with open(self._json_fname, 'w') as f_graph_json:
                         f_graph_json.write(self._json)
 
                 self._params_fname = None
