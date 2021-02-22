@@ -56,8 +56,8 @@ if tv2_p not in sys.path:
 else:
     raise Exception('%s not found' % tv2_p)
 
-import cvflow_backend
-from cvflow_backend.ir_utils import ir_helper
+import cvflowbackend
+from cvflowbackend.ir_utils import ir_helper
 import onnx_graph_utils as OnnxGraphUtils
 
 class VarReplacer(ExprMutator):
@@ -267,6 +267,7 @@ def create_splits_json(dra_dict, primary_outputs, vp_name, output_folder, gs_rec
 
     attr_dict = {}
     #attr_dict['cnngen_flags'] = '-c coeff-force-fx16,act-force-fx16'
+    attr_dict['cnngen_flags'] = ''
     attr_dict['vas_flags'] = '-v'
 
     graph_surgery_transforms = []
@@ -346,13 +347,13 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     with open(graphdesc_path, mode='rb') as f:
         graphdesc_bytes = f.read()
 
-    ckpt_ambapb = cvflow_backend.prepare(model_bytes=model_proto.SerializeToString(), \
-                                         graph_desc_bytes=graphdesc_bytes, \
-                                         framework='onnx', \
-                                         metagraph_type='fast_checkpoint', \
-                                         output_name=output_name, \
-                                         output_folder=output_folder, \
-                                         log_dir=output_folder+'/logs')
+    ckpt_ambapb = cvflowbackend.prepare(model_proto.SerializeToString(), \
+                                        graphdesc_bytes, \
+                                        'onnx', \
+                                        metagraph_type='fast_checkpoint', \
+                                        output_name=output_name, \
+                                        output_folder=output_folder, \
+                                        log_dir=output_folder+'/logs')
 
     save_path = ir_helper.save_model(ckpt_ambapb, \
                                      output_name, \
@@ -364,10 +365,10 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     # this generates vas artifacts which can be used to generate 
     # cavalry bin
     _output_folder = output_folder + 'cavalry/'
-    cvflow_backend.prepare(model_bytes=ckpt_ambapb.SerializeToString(),
-                           metagraph_type='checkpoint',
-                           output_name=output_name,
-                           output_folder=_output_folder)
+    cvflowbackend.convert(ckpt_ambapb.SerializeToString(),
+                          metagraph_type='checkpoint',
+                          output_name=output_name,
+                          output_folder=_output_folder)
 
     vas_out_dir = _output_folder + 'ambacnn_out/' + output_name + '/vas_output/'
     if not os.path.isdir(vas_out_dir):
