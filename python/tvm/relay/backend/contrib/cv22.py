@@ -295,7 +295,21 @@ def create_splits_json(dra_dict, primary_outputs, vp_name, output_folder, gs_rec
 def set_env_variable(key, value):
     os.environ[key] = value
 
+def run_command(cmd):
+    """Run command, return output as string."""
+    import subprocess
+    output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
+    return output.decode("ascii")
+
 def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config=None):
+
+    # flatten i/o using graph surgery
+    gs_path = run_command('tv2 -basepath CnnUtils')
+    sys.path.append(os.path.join(gs_path, 'graph_surgery'))
+
+    from onnx_transform import OnnxGraphTransform
+    gs = OnnxGraphTransform(model=model_proto)
+    model_proto = gs.apply_transforms(transforms='FlattenIO')
 
     if not output_folder.endswith('/'):
          output_folder += '/'
