@@ -301,15 +301,22 @@ def run_command(cmd):
     output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
     return output.decode("ascii")
 
-def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config=None):
+# flatten i/o using graph surgery
+def flatten_io(in_model_proto):
 
-    # flatten i/o using graph surgery
     gs_path = run_command('tv2 -basepath CnnUtils')
     sys.path.append(os.path.join(gs_path, 'graph_surgery'))
 
     from onnx_transform import OnnxGraphTransform
-    gs = OnnxGraphTransform(model=model_proto)
-    model_proto = gs.apply_transforms(transforms='FlattenIO')
+    gs = OnnxGraphTransform(model=in_model_proto)
+    out_model_proto = gs.apply_transforms(transforms='FlattenIO')
+
+    return out_model_proto
+
+def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config=None):
+
+    # flatten i/o using graph surgery
+    model_proto = flatten_io(model_proto)
 
     if not output_folder.endswith('/'):
          output_folder += '/'
