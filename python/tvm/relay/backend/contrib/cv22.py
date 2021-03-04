@@ -332,10 +332,12 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         for i,sh in primary_inputs.items():
             metadata['Inputs'].append({'name':i, 'shape':sh, 'dtype':in_dtype})
 
+        '''
         out_dtype = metadata['Outputs'][0]['dtype']
         metadata['Outputs'] = []
         for o,sh in primary_outputs.items():
             metadata['Outputs'].append({'name':o, 'shape':sh, 'dtype':out_dtype})
+        '''
 
     # set outputs list as env variable
     # this will be used by codegen

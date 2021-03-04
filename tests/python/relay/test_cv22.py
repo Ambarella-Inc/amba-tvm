@@ -372,6 +372,14 @@ class CV22_TVM_Compilation():
             
             module_list = PartitionOneToModule(mod, compiler)
 
+            if isinstance(mod['main'].ret_type, tvm.ir.type.TupleType):
+                out_list = mod['main'].ret_type.fields
+            elif isinstance(mod['main'].ret_type, tvm.ir.tensor_type.TensorType):
+                out_list = [mod['main'].ret_type]
+            else:
+                self._error_('Unknown return type %s' % type(mod['main'].ret_type))
+            self._update_metadata_outputs_(out_list)
+
             output_folder = join(self.tmpdir, 'prepare')
             makedirs(output_folder)
 
@@ -420,6 +428,20 @@ class CV22_TVM_Compilation():
 
         except Exception as e:
             self._error_(str(e))
+
+    def _update_metadata_outputs_(self, out_list):
+
+        outputs = []
+        cnt = 0
+        for o in out_list:
+            name = 'output_' + str(cnt)
+            sh = [int(k) for k in o.shape]
+            dt = o.dtype
+            outputs.extend([{'name':name, 'shape':sh, 'dtype':dt}])
+
+            cnt += 1
+
+        self.metadata['Model']['Outputs'] = outputs.copy()
 
     def _save_output_to_file_(self):
         metadata_file = join(self.tmpdir, self.out_bname + '.meta')
