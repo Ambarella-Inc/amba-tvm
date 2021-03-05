@@ -355,19 +355,6 @@ void GraphRuntime::SetupStorage() {
     ICHECK(bits % 8U == 0U || bits == 1U || bits == 4U);
     size_t bytes = ((bits + 7U) / 8U) * size;
 
-    // TBD, this part of code should be removed when VP I/Os are flattened
-    if (device_type == static_cast<int>(kDLAmba)) {
-      size_t line_bytes = 1 * ((bits + 7U) / 8U);
-      if (attrs_.shape[i].size()) {
-        line_bytes *= attrs_.shape[i].back();
-      }
-      // TBD, AmbaDLTensor has 64 pitch
-      if (line_bytes % 64 != 0) {
-        bytes /= line_bytes;
-        bytes *= ((line_bytes + 63) >> 6) << 6;
-      }
-    }
-
     uint32_t sid = static_cast<uint32_t>(storage_id);
     if (sid >= pool_entry.size()) {
       pool_entry.resize(sid + 1, {0, -1});
