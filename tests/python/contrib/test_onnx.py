@@ -537,6 +537,20 @@ def test_resize():
                     verify_resize(i, o, m, c)
                     #print('Passed resize test case: (%s %s, %s, %s)' % (i, o, m, c))
 
+def test_sigmoid():
+    def verify_sigmoid(dshape, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.sigmoid(x)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_sigmoid", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_sigmoid(i)
+        #print('Passed sigmoid test case:', i)
+
 if __name__ == "__main__":
     test_add()
     test_bias_add()
@@ -561,3 +575,4 @@ if __name__ == "__main__":
     test_clip()
     test_expand_dims()
     test_resize()
+    test_sigmoid()
