@@ -357,20 +357,20 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
                                         output_folder=output_folder, \
                                         log_dir=output_folder+'/logs')
 
-    save_path = ir_helper.save_model(ckpt_ambapb, \
-                                     output_name, \
-                                     output_folder)
-
     # generate cavalry bin
 
     # roundabout way - convert fast checkpoint to checkpoint
     # this generates vas artifacts which can be used to generate 
     # cavalry bin
     _output_folder = output_folder + 'cavalry/'
-    cvflowbackend.convert(ckpt_ambapb.SerializeToString(),
-                          metagraph_type='checkpoint',
-                          output_name=output_name,
-                          output_folder=_output_folder)
+    ckpt_ambapb = cvflowbackend.convert(ckpt_ambapb.SerializeToString(),
+                                        metagraph_type='checkpoint',
+                                        output_name=output_name,
+                                        output_folder=_output_folder)
+
+    save_path = ir_helper.save_model(ckpt_ambapb, \
+                                     output_name, \
+                                     output_folder)
 
     vas_out_dir = _output_folder + 'ambacnn_out/' + output_name + '/vas_output/'
     if not os.path.isdir(vas_out_dir):
