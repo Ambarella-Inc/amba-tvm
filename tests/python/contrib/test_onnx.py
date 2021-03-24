@@ -549,7 +549,6 @@ def test_sigmoid():
 
     for i in isize:
         verify_sigmoid(i)
-        #print('Passed sigmoid test case:', i)
 
 if __name__ == "__main__":
     test_add()
