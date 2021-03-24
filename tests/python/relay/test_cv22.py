@@ -396,7 +396,7 @@ class CV22_TVM_Compilation():
                                               input_config=input_config)
                 self.logger.info('Saved compiled model to: %s\n' % save_path)
 
-                ambapb_fname = mod_name + '.ambapb.fastckpt.onnx'
+                ambapb_fname = mod_name + '.ambapb.ckpt.onnx'
                 ambapb_fpath = join(self.tmpdir, output_folder, ambapb_fname)
                 self._check_for_file_(ambapb_fpath)
                 self.ambapb_fpaths.append(ambapb_fpath)

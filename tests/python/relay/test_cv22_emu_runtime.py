@@ -58,7 +58,9 @@ class CV22_TVM_Emu_Runtime():
             out = o.flatten()
             out.tofile(output_fname)
             self.logger.info('Saved output file %s' % output_fname)
+            cnt += 1
 
+            '''
             # print top 5
             softmax = np.exp(out) / np.sum(np.exp(out))
             top5_idx = np.argsort(softmax)[::-1][:5]
@@ -66,6 +68,7 @@ class CV22_TVM_Emu_Runtime():
 
             print('Top 5 categories:', top5_idx)
             print('Top 5 scores:', top5_val)
+            '''
 
     ## private methods
 

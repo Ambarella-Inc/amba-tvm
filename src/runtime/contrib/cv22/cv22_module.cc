@@ -66,7 +66,7 @@ class CV22Module : public runtime::ModuleNode {
 
       std::string out_dir = "/tmp/test_amba/eval/";
 
-      std::string ambapb_fpath = out_dir + cv22_subgraphs_[name].filename + ".ambapb.fastckpt.onnx";
+      std::string ambapb_fpath = out_dir + cv22_subgraphs_[name].filename + ".ambapb.ckpt.onnx";
       LOG(INFO) << "Filename: " << ambapb_fpath;
       std::string cmd = "evaluate.py --metagraph " + ambapb_fpath;
 
