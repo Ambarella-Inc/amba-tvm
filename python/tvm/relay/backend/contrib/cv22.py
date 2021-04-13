@@ -204,11 +204,14 @@ def PartitionOneToModule(mod, compiler):
     return module_dict
 
 class tags(Enum):
-    SHAPE = 'shape'
-    FPATH = 'filepath'
-    FILE  = 'file'
-    DTYPE = 'dtype'
-    EXTN  = 'extn'
+    SHAPE  = 'shape'
+    FPATH  = 'filepath'
+    FILE   = 'file'
+    DTYPE  = 'dtype'
+    EXTN   = 'extn'
+    CFMT   = 'colorformat'
+    MEAN   = 'mean'
+    SCALE  = 'scale'
 
 def create_rand_dra(primary_inputs, output_folder):
     '''
@@ -244,22 +247,20 @@ def create_splits_json(dra_dict, primary_outputs, vp_name, output_folder, gs_rec
     '''
     Create splits json for cvflow backend prepare
     Inputs:
-    dra_dict: {input tensor name: {shape:shape, filepath:dra bin filename} }
+    dra_dict: {input tensor name: {shape:shape, filepath:dra bin filename, ...} }
     vp_name:  vp subgraph name
     primary_outputs: {output tensor name: shape}
     Outputs:
     splits_json_dict: See spec
     '''
 
-    begin_dict = {}
-    for i in dra_dict:
-        inp_dict = {}
-        inp_dict[tags.SHAPE.value] = dra_dict[i][tags.SHAPE.value]
-        inp_dict[tags.DTYPE.value] = 'float32'
-        inp_dict[tags.FILE.value]  = dra_dict[i][tags.FPATH.value]
-        inp_dict[tags.EXTN.value]  = 'bin'
+    begin_dict = dra_dict.copy()
 
-        begin_dict[i] = inp_dict.copy()
+    # temp workaround
+    for i in dra_dict:
+        begin_dict[i]['file'] = dra_dict[i][tags.FPATH.value]
+        del begin_dict[i][tags.FPATH.value]
+        del begin_dict[i][tags.CFMT.value]
 
     end_dict = {}
     for o in primary_outputs:
@@ -279,7 +280,7 @@ def create_splits_json(dra_dict, primary_outputs, vp_name, output_folder, gs_rec
 
     vp_dict = {}
     vp_dict['type']  = 'ORCVP'
-    vp_dict['begin'] = begin_dict
+    vp_dict['begin'] = dra_dict 
     vp_dict['end']   = end_dict
     vp_dict['attr']  = attr_dict
 
@@ -304,8 +305,8 @@ def run_command(cmd):
 # flatten i/o using graph surgery
 def flatten_io(in_model_proto):
 
-    gs_path = run_command('tv2 -basepath CnnUtils')
-    sys.path.append(os.path.join(gs_path, 'graph_surgery'))
+    gs_path = run_command('tv2 -basepath frameworklibs').strip()
+    sys.path.append(os.path.join(gs_path, 'lib/python3.7/site-packages/frameworklibs/onnx/'))
 
     from onnx_transform import OnnxGraphTransform
     gs = OnnxGraphTransform(model=in_model_proto)
@@ -339,9 +340,9 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
         dra_dict = {}
         for i in primary_inputs:
-            dra_dict[i] = {}
+            _name = list(input_config.keys())[0]
+            dra_dict[i] = input_config[_name].copy()
             dra_dict[i][tags.SHAPE.value] = primary_inputs[i]
-            dra_dict[i][tags.FPATH.value] = input_config[list(input_config.keys())[0]][tags.FPATH.value]
 
     # create splits json file
     graphdesc_path = create_splits_json(dra_dict, primary_outputs, output_name, output_folder, gs_recs)

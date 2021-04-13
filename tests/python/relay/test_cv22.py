@@ -37,6 +37,12 @@ from tvm.relay.build_module import bind_params_by_name
 # onnx imports
 from tvm.contrib.target.onnx import to_onnx
 
+def run_command(cmd):
+    """Run command, return output as string."""
+    import subprocess
+    output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
+    return output.decode("ascii")
+
 class CV22_TVM_Compilation():
 
     def __init__(self, model_directory, prebuilt_bins_path, metadata_file, debuglevel=2):
@@ -185,6 +191,80 @@ class CV22_TVM_Compilation():
     def _remove_tmp_dir_(self):
         rmtree(self.tmpdir, ignore_errors=True)
 
+    def _list_from_str_(self, in_str, dtype):
+        out_list = []
+
+        if isinstance(in_str, list):
+            out_list = in_str
+        elif isinstance(in_str, str):
+            sh_list = in_str.split(',')
+            out_list = [dtype(s) for s in sh_list]
+        else:
+            self._error_('Unsupport type %s, supported types: [str, list]' % type(in_str))
+
+        return out_list
+
+    def _dra_files_(self, out_dir, dra_fname, calib_fpath, extn, shape, colorfmt, dtype):
+
+        # already in binary -- nothing to be done
+        if extn.endswith('bin'):
+            dra_bin_folder = calib_fpath
+
+        # convert to binary
+        else:
+            ccutils_path = run_command('tv2 -basepath CommonCnnUtils').strip()
+            sys.path.append(ccutils_path)
+            import imgtobin
+
+            # adjust args as needed for imgtobin
+            if dtype == 'float32':
+                dfmt = '1,2,0,7'
+            elif dtype == 'float16':
+                dfmt = '1,1,0,4'
+            elif dtype == 'int8':
+                dfmt = '1,0,0,0'
+            elif dtype == 'int16':
+                dfmt = '1,1,0,0'
+            elif dtype == 'int32':
+                dfmt = '1,2,0,0'
+            elif dtype == 'uint8':
+                dfmt = '0,0,0,0'
+            elif dtype == 'uint16':
+                dfmt = '0,1,0,0'
+            elif dtype == 'uint32':
+                dfmt = '0,2,0,0'
+            else:
+                self._error_('Unknown dtype (%s) in input config' % dtype)
+
+            if isinstance(shape, list):
+                shape = [str(s) for s in shape]
+                shape = ','.join(shape)
+
+            dra_bin_folder = join(out_dir, 'dra_imgs_bin')
+            makedirs(dra_bin_folder)
+
+            cfmt = 1 if colorfmt=='RGB' else 0
+
+            args = []
+            args.extend(['-i', calib_fpath])
+            args.extend(['-o', dra_bin_folder])
+            args.extend(['-c', str(cfmt)])
+            args.extend(['-d', dfmt])
+            args.extend(['-s', shape])
+
+            status = imgtobin.main(args)
+            if not status:
+                self._error_('Error converting DRA images to binary')
+
+        dra_count = 0
+        with open(dra_fname, 'w') as f:
+            for fl in listdir(dra_bin_folder):
+                if fl.endswith('bin'):
+                    f.write(join(dra_bin_folder,fl) + '\n')
+                    dra_count += 1
+
+        return dra_count
+
     def _convert_to_relay_(self):
         """
         Extract model file
@@ -223,26 +303,50 @@ class CV22_TVM_Compilation():
         input_shape = {}
 
         for name,items in input_config.items():
-            calib_fpath = join(model_path, items[T.FPATH.value])
-
             mangled_name = name.replace('/','__')
 
+            calib_fpath = join(model_path, items[T.FPATH.value])
+
+            # convert shape from str to list
+            input_config[name][T.SHAPE.value] = self._list_from_str_(items[T.SHAPE.value], int)
+            input_shape[name] = input_config[name][T.SHAPE.value]
+
+            # check for colorformat
+            # default: RGB
+            input_config[name][T.CFMT.value] = items.get(T.CFMT.value, 'RGB')
+
+            # check for dtype
+            # default: float32
+            input_config[name][T.DTYPE.value] = items.get(T.DTYPE.value, 'float32')
+
+            # check for extn
+            # default: .bin
+            extn = items.get(T.EXTN.value, '.bin')
+
+            # look for file with extn .bin in calib_fpath
+            # if extn is not .bin, convert them to binary
             dra_fname = join(self.tmpdir, mangled_name+'_dra_list.txt')
-            with open(dra_fname, 'w') as f:
-                for fl in listdir(calib_fpath):
-                    if fl.endswith('.bin'):
-                        f.write(join(calib_fpath,fl) + '\n')
+            dra_count = self._dra_files_(self.tmpdir, dra_fname, calib_fpath, extn, input_config[name][T.SHAPE.value], \
+                                         input_config[name][T.CFMT.value], input_config[name][T.DTYPE.value])
+            if dra_count == 0:
+                self._error_('No files of extn %s found in %s' % (extn, calib_fpath))
+
+            input_config[name][T.EXTN.value] = '.bin'
 
             # overwrite fpath with txt file
             input_config[name][T.FPATH.value] = dra_fname
 
-            # convert shape from str to list
-            sh_list = items[T.SHAPE.value].split(',')
-            sh_list = [int(s) for s in sh_list]
-            input_shape[name] = sh_list
-            input_config[name][T.SHAPE.value] = sh_list
+            # check for mean
+            # default: None
+            if T.MEAN.value in items:
+                input_config[name][T.MEAN.value] = self._list_from_str_(items[T.MEAN.value], float)
 
-        ## (END) CONFIG STUFF
+            # check for scale
+            # default: None
+            if T.SCALE.value in items:
+                input_config[name][T.SCALE.value] = self._list_from_str_(items[T.SCALE.value], float)
+
+        ## (END) CONFIG 
 
         # parse model file and convert to relay
         self.module, self.params, self.aux_files, self.metadata = self._convert_model_to_relay_(model_files, input_shape)
