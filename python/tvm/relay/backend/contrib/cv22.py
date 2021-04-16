@@ -58,7 +58,7 @@ else:
 
 import cvflowbackend
 from cvflowbackend.ir_utils import ir_helper
-import onnx_graph_utils as OnnxGraphUtils
+from frameworklibs.onnx import onnx_graph_utils as OnnxGraphUtils
 
 class VarReplacer(ExprMutator):
     def __init__(self, var_map):

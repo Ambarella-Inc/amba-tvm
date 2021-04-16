@@ -26,6 +26,7 @@ import json
 import logging
 import tarfile
 import time
+import numpy as np
 logging.basicConfig(level=logging.DEBUG)
 
 # tvm imports
@@ -204,6 +205,44 @@ class CV22_TVM_Compilation():
 
         return out_list
 
+    def _check_for_nhwc_(self, shape):
+        if shape[1] == 3: # nchw
+            nhwc = False
+        elif shape[3] == 3: # nhwc
+            nhwc = True
+        else:
+            self._error_('Expecting 3 channel input, got %s' % str(shape))
+
+        return nhwc
+
+    def _transpose_dra_bin_(self, fname, dtype, shape):
+        # change to numpy type
+        if dtype == 'float32':
+            dfmt = np.float32
+        elif dtype == 'float16':
+            dfmt = np.float16
+        elif dtype == 'int8':
+            dfmt = np.int8
+        elif dtype == 'int16':
+            dfmt = np.int16
+        elif dtype == 'int32':
+            dfmt = np.int32
+        elif dtype == 'uint8':
+            dfmt = np.uint8
+        elif dtype == 'uint16':
+            dfmt = np.uint16
+        elif dtype == 'uint32':
+            dfmt = np.unt32
+
+        self.logger.info('_transpose_dra_bin_: working on file %s' % fname)
+        self.logger.info('Shape before transpose: %s' % shape)
+        in_arr = np.fromfile(fname, count=-1, dtype=dfmt)
+        in_arr = in_arr.reshape(shape)
+        in_arr = in_arr.transpose(0,2,3,1)
+        self.logger.info('Shape after transpose: %s' % str(in_arr.shape))
+        in_arr = in_arr.flatten()
+        in_arr.tofile(fname)
+
     def _dra_files_(self, out_dir, dra_fname, calib_fpath, extn, shape, colorfmt, dtype):
 
         # already in binary -- nothing to be done
@@ -236,9 +275,24 @@ class CV22_TVM_Compilation():
             else:
                 self._error_('Unknown dtype (%s) in input config' % dtype)
 
-            if isinstance(shape, list):
-                shape = [str(s) for s in shape]
-                shape = ','.join(shape)
+            # convert to list
+            if isinstance(shape, str):
+                shape = shape.split(',')
+                shape = [int(s.strip()) for s in shape]
+
+            if len(shape) == 3:
+                shape = [1] + shape
+            if len(shape) != 4:
+                self._error_('Expecting shape to be 3D or 4D, got %s' % str(ishape))
+
+            transpose_needed = self._check_for_nhwc_(shape)
+            if transpose_needed:
+                orig_shape = shape.copy()
+                shape[1] = orig_shape[3]
+                shape[3] = orig_shape[1]
+
+            shape_str = [str(s) for s in shape]
+            shape_str = ','.join(shape_str)
 
             dra_bin_folder = join(out_dir, 'dra_imgs_bin')
             makedirs(dra_bin_folder)
@@ -250,7 +304,7 @@ class CV22_TVM_Compilation():
             args.extend(['-o', dra_bin_folder])
             args.extend(['-c', str(cfmt)])
             args.extend(['-d', dfmt])
-            args.extend(['-s', shape])
+            args.extend(['-s', shape_str])
 
             status = imgtobin.main(args)
             if not status:
@@ -260,7 +314,10 @@ class CV22_TVM_Compilation():
         with open(dra_fname, 'w') as f:
             for fl in listdir(dra_bin_folder):
                 if fl.endswith('bin'):
-                    f.write(join(dra_bin_folder,fl) + '\n')
+                    fname_with_path = join(dra_bin_folder,fl)
+                    if transpose_needed:
+                        self._transpose_dra_bin_(fname_with_path, dtype, shape)
+                    f.write(fname_with_path + '\n')
                     dra_count += 1
 
         return dra_count
