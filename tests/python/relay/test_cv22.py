@@ -107,7 +107,7 @@ class CV22_TVM_Compilation():
             else:
                 raise Exception('%s not found' % tv2_p)
 
-        from logger import ModifiedABSLLogger
+        from frameworklibs.common.logger import ModifiedABSLLogger
         log = ModifiedABSLLogger(program_name="CV22_TVM", amba_verbosity_level=debuglevel)
 
         return log
