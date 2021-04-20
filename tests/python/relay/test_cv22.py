@@ -53,7 +53,7 @@ class CV22_TVM_Compilation():
         metadata_file: Path to default metadata file 
         debuglevel: Debug level (default: 2))
         """
-        self.dir    = model_directory
+        self.dir = model_directory
 
         self.prebuilt_bins_path = prebuilt_bins_path
         self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
@@ -243,14 +243,33 @@ class CV22_TVM_Compilation():
         in_arr = in_arr.flatten()
         in_arr.tofile(fname)
 
-    def _dra_files_(self, out_dir, dra_fname, calib_fpath, extn, shape, colorfmt, dtype):
+    def _dra_files_(self, out_dir, dra_fname, calib_fpath, input_shape, colorfmt, dtype):
 
-        # already in binary -- nothing to be done
-        if extn.endswith('bin'):
+        transpose_needed = False
+        shape = input_shape.copy() # make copy
+
+        # if all files are binary, nothing more to be done
+        # if some files are non binary (i.e. jpg, png etc), call imgtobin
+        # NOTE::imgtobin skips binary files
+        bin_files = []
+        img_files = []
+        for fl in listdir(calib_fpath):
+            if fl.endswith('.bin'):
+                bin_files.append(fl)
+            else:
+                img_files.append(fl)
+
+        # all files are binary
+        if len(img_files) == 0:
             dra_bin_folder = calib_fpath
 
-        # convert to binary
+        # dra files are not binary
         else:
+            if len(bin_files) > 0:
+                self.logger.warn('Skipping the following binary files found in dra folder (%s)' % calib_fpath)
+                [self.logger.warn('%s' % b) for b in bin_files]
+                self.logger.warn('Do not mix prepared (binary) and image (jpg / png / ..) files')
+
             ccutils_path = run_command('tv2 -basepath CommonCnnUtils').strip()
             sys.path.append(ccutils_path)
             import imgtobin
@@ -313,12 +332,16 @@ class CV22_TVM_Compilation():
         dra_count = 0
         with open(dra_fname, 'w') as f:
             for fl in listdir(dra_bin_folder):
-                if fl.endswith('bin'):
-                    fname_with_path = join(dra_bin_folder,fl)
-                    if transpose_needed:
-                        self._transpose_dra_bin_(fname_with_path, dtype, shape)
-                    f.write(fname_with_path + '\n')
-                    dra_count += 1
+                if not fl.endswith('bin'):
+                    self.logger.warn('Possible bug: found non binary file (%s) in dra folder (%s). Skipping for now' % (fl, dra_bin_folder))
+                    continue
+
+                fname_with_path = join(dra_bin_folder,fl)
+                if transpose_needed:
+                    self.logger.debug('Transposing DRA file %s' % fname_with_path)
+                    self._transpose_dra_bin_(fname_with_path, dtype, shape)
+                f.write(fname_with_path + '\n')
+                dra_count += 1
 
         return dra_count
 
@@ -376,17 +399,13 @@ class CV22_TVM_Compilation():
             # default: float32
             input_config[name][T.DTYPE.value] = items.get(T.DTYPE.value, 'float32')
 
-            # check for extn
-            # default: .bin
-            extn = items.get(T.EXTN.value, '.bin')
-
             # look for file with extn .bin in calib_fpath
             # if extn is not .bin, convert them to binary
             dra_fname = join(self.tmpdir, mangled_name+'_dra_list.txt')
-            dra_count = self._dra_files_(self.tmpdir, dra_fname, calib_fpath, extn, input_config[name][T.SHAPE.value], \
+            dra_count = self._dra_files_(self.tmpdir, dra_fname, calib_fpath, input_config[name][T.SHAPE.value], \
                                          input_config[name][T.CFMT.value], input_config[name][T.DTYPE.value])
             if dra_count == 0:
-                self._error_('No files of extn %s found in %s' % (extn, calib_fpath))
+                self._error_('No dra files found in %s' % calib_fpath)
 
             input_config[name][T.EXTN.value] = '.bin'
 
@@ -675,7 +694,7 @@ def makerun(args):
         makedirs(args.model_dir)
 
     try:
-        c = CV22_TVM_Compilation(args.model_dir, args.prebuilt_binaries, args.metadata_path)
+        c = CV22_TVM_Compilation(args.model_dir, args.prebuilt_binaries, args.metadata_path, debuglevel=args.verbosity)
         out_fname = c.process()
 
         # COMPILATION_COMPLETE
@@ -709,6 +728,10 @@ def main(args):
     parser.add_argument('-m', '--metadata_path', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
                         metavar='Default metadata file path',
                         help='Path to default metadata file')
+
+    parser.add_argument('-v', '--verbosity', type=int, required=False, default=2,
+                        metavar='Debug level 0 - 5',
+                        help='Debug level 0 - 5')
 
     args = parser.parse_args(args)
 
