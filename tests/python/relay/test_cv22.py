@@ -26,6 +26,7 @@ import json
 import logging
 import tarfile
 import time
+import numpy as np
 logging.basicConfig(level=logging.DEBUG)
 
 # tvm imports
@@ -37,6 +38,12 @@ from tvm.relay.build_module import bind_params_by_name
 # onnx imports
 from tvm.contrib.target.onnx import to_onnx
 
+def run_command(cmd):
+    """Run command, return output as string."""
+    import subprocess
+    output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
+    return output.decode("ascii")
+
 class CV22_TVM_Compilation():
 
     def __init__(self, model_directory, prebuilt_bins_path, metadata_file, debuglevel=2):
@@ -46,7 +53,7 @@ class CV22_TVM_Compilation():
         metadata_file: Path to default metadata file 
         debuglevel: Debug level (default: 2))
         """
-        self.dir    = model_directory
+        self.dir = model_directory
 
         self.prebuilt_bins_path = prebuilt_bins_path
         self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
@@ -107,7 +114,7 @@ class CV22_TVM_Compilation():
             else:
                 raise Exception('%s not found' % tv2_p)
 
-        from logger import ModifiedABSLLogger
+        from frameworklibs.common.logger import ModifiedABSLLogger
         log = ModifiedABSLLogger(program_name="CV22_TVM", amba_verbosity_level=debuglevel)
 
         return log
@@ -185,6 +192,159 @@ class CV22_TVM_Compilation():
     def _remove_tmp_dir_(self):
         rmtree(self.tmpdir, ignore_errors=True)
 
+    def _list_from_str_(self, in_str, dtype):
+        out_list = []
+
+        if isinstance(in_str, list):
+            out_list = in_str
+        elif isinstance(in_str, str):
+            sh_list = in_str.split(',')
+            out_list = [dtype(s) for s in sh_list]
+        else:
+            self._error_('Unsupport type %s, supported types: [str, list]' % type(in_str))
+
+        return out_list
+
+    def _check_for_nhwc_(self, shape):
+        if shape[1] == 3: # nchw
+            nhwc = False
+        elif shape[3] == 3: # nhwc
+            nhwc = True
+        else:
+            self._error_('Expecting 3 channel input, got %s' % str(shape))
+
+        return nhwc
+
+    def _transpose_dra_bin_(self, fname, dtype, shape):
+        # change to numpy type
+        if dtype == 'float32':
+            dfmt = np.float32
+        elif dtype == 'float16':
+            dfmt = np.float16
+        elif dtype == 'int8':
+            dfmt = np.int8
+        elif dtype == 'int16':
+            dfmt = np.int16
+        elif dtype == 'int32':
+            dfmt = np.int32
+        elif dtype == 'uint8':
+            dfmt = np.uint8
+        elif dtype == 'uint16':
+            dfmt = np.uint16
+        elif dtype == 'uint32':
+            dfmt = np.unt32
+
+        self.logger.info('_transpose_dra_bin_: working on file %s' % fname)
+        self.logger.info('Shape before transpose: %s' % shape)
+        in_arr = np.fromfile(fname, count=-1, dtype=dfmt)
+        in_arr = in_arr.reshape(shape)
+        in_arr = in_arr.transpose(0,2,3,1)
+        self.logger.info('Shape after transpose: %s' % str(in_arr.shape))
+        in_arr = in_arr.flatten()
+        in_arr.tofile(fname)
+
+    def _dra_files_(self, out_dir, dra_fname, calib_fpath, input_shape, colorfmt, dtype):
+
+        transpose_needed = False
+        shape = input_shape.copy() # make copy
+
+        # if all files are binary, nothing more to be done
+        # if some files are non binary (i.e. jpg, png etc), call imgtobin
+        # NOTE::imgtobin skips binary files
+        bin_files = []
+        img_files = []
+        for fl in listdir(calib_fpath):
+            if fl.endswith('.bin'):
+                bin_files.append(fl)
+            else:
+                img_files.append(fl)
+
+        # all files are binary
+        if len(img_files) == 0:
+            dra_bin_folder = calib_fpath
+
+        # dra files are not binary
+        else:
+            if len(bin_files) > 0:
+                self.logger.warn('Skipping the following binary files found in dra folder (%s)' % calib_fpath)
+                [self.logger.warn('%s' % b) for b in bin_files]
+                self.logger.warn('Do not mix prepared (binary) and image (jpg / png / ..) files')
+
+            ccutils_path = run_command('tv2 -basepath CommonCnnUtils').strip()
+            sys.path.append(ccutils_path)
+            import imgtobin
+
+            # adjust args as needed for imgtobin
+            if dtype == 'float32':
+                dfmt = '1,2,0,7'
+            elif dtype == 'float16':
+                dfmt = '1,1,0,4'
+            elif dtype == 'int8':
+                dfmt = '1,0,0,0'
+            elif dtype == 'int16':
+                dfmt = '1,1,0,0'
+            elif dtype == 'int32':
+                dfmt = '1,2,0,0'
+            elif dtype == 'uint8':
+                dfmt = '0,0,0,0'
+            elif dtype == 'uint16':
+                dfmt = '0,1,0,0'
+            elif dtype == 'uint32':
+                dfmt = '0,2,0,0'
+            else:
+                self._error_('Unknown dtype (%s) in input config' % dtype)
+
+            # convert to list
+            if isinstance(shape, str):
+                shape = shape.split(',')
+                shape = [int(s.strip()) for s in shape]
+
+            if len(shape) == 3:
+                shape = [1] + shape
+            if len(shape) != 4:
+                self._error_('Expecting shape to be 3D or 4D, got %s' % str(ishape))
+
+            transpose_needed = self._check_for_nhwc_(shape)
+            if transpose_needed:
+                orig_shape = shape.copy()
+                shape[1] = orig_shape[3]
+                shape[3] = orig_shape[1]
+
+            shape_str = [str(s) for s in shape]
+            shape_str = ','.join(shape_str)
+
+            dra_bin_folder = join(out_dir, 'dra_imgs_bin')
+            makedirs(dra_bin_folder)
+
+            cfmt = 1 if colorfmt=='RGB' else 0
+
+            args = []
+            args.extend(['-i', calib_fpath])
+            args.extend(['-o', dra_bin_folder])
+            args.extend(['-c', str(cfmt)])
+            args.extend(['-d', dfmt])
+            args.extend(['-s', shape_str])
+
+            status = imgtobin.main(args)
+            if not status:
+                self._error_('Error converting DRA images to binary')
+
+        dra_count = 0
+        with open(dra_fname, 'w') as f:
+            for fl in listdir(dra_bin_folder):
+                if not fl.endswith('bin'):
+                    self.logger.warn('Possible bug: found non binary file (%s) in dra folder (%s). Skipping for now' % (fl, dra_bin_folder))
+                    continue
+
+                fname_with_path = join(dra_bin_folder,fl)
+                if transpose_needed:
+                    self.logger.debug('Transposing DRA file %s' % fname_with_path)
+                    self._transpose_dra_bin_(fname_with_path, dtype, shape)
+                f.write(fname_with_path + '\n')
+                dra_count += 1
+
+        return dra_count
+
     def _convert_to_relay_(self):
         """
         Extract model file
@@ -223,26 +383,46 @@ class CV22_TVM_Compilation():
         input_shape = {}
 
         for name,items in input_config.items():
-            calib_fpath = join(model_path, items[T.FPATH.value])
-
             mangled_name = name.replace('/','__')
 
+            calib_fpath = join(model_path, items[T.FPATH.value])
+
+            # convert shape from str to list
+            input_config[name][T.SHAPE.value] = self._list_from_str_(items[T.SHAPE.value], int)
+            input_shape[name] = input_config[name][T.SHAPE.value]
+
+            # check for colorformat
+            # default: RGB
+            input_config[name][T.CFMT.value] = items.get(T.CFMT.value, 'RGB')
+
+            # check for dtype
+            # default: float32
+            input_config[name][T.DTYPE.value] = items.get(T.DTYPE.value, 'float32')
+
+            # look for file with extn .bin in calib_fpath
+            # if extn is not .bin, convert them to binary
             dra_fname = join(self.tmpdir, mangled_name+'_dra_list.txt')
-            with open(dra_fname, 'w') as f:
-                for fl in listdir(calib_fpath):
-                    if fl.endswith('.bin'):
-                        f.write(join(calib_fpath,fl) + '\n')
+            dra_count = self._dra_files_(self.tmpdir, dra_fname, calib_fpath, input_config[name][T.SHAPE.value], \
+                                         input_config[name][T.CFMT.value], input_config[name][T.DTYPE.value])
+            if dra_count == 0:
+                self._error_('No dra files found in %s' % calib_fpath)
+
+            input_config[name][T.EXTN.value] = '.bin'
 
             # overwrite fpath with txt file
             input_config[name][T.FPATH.value] = dra_fname
 
-            # convert shape from str to list
-            sh_list = items[T.SHAPE.value].split(',')
-            sh_list = [int(s) for s in sh_list]
-            input_shape[name] = sh_list
-            input_config[name][T.SHAPE.value] = sh_list
+            # check for mean
+            # default: None
+            if T.MEAN.value in items:
+                input_config[name][T.MEAN.value] = self._list_from_str_(items[T.MEAN.value], float)
 
-        ## (END) CONFIG STUFF
+            # check for scale
+            # default: None
+            if T.SCALE.value in items:
+                input_config[name][T.SCALE.value] = self._list_from_str_(items[T.SCALE.value], float)
+
+        ## (END) CONFIG 
 
         # parse model file and convert to relay
         self.module, self.params, self.aux_files, self.metadata = self._convert_model_to_relay_(model_files, input_shape)
@@ -514,7 +694,7 @@ def makerun(args):
         makedirs(args.model_dir)
 
     try:
-        c = CV22_TVM_Compilation(args.model_dir, args.prebuilt_binaries, args.metadata_path)
+        c = CV22_TVM_Compilation(args.model_dir, args.prebuilt_binaries, args.metadata_path, debuglevel=args.verbosity)
         out_fname = c.process()
 
         # COMPILATION_COMPLETE
@@ -548,6 +728,10 @@ def main(args):
     parser.add_argument('-m', '--metadata_path', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
                         metavar='Default metadata file path',
                         help='Path to default metadata file')
+
+    parser.add_argument('-v', '--verbosity', type=int, required=False, default=2,
+                        metavar='Debug level 0 - 5',
+                        help='Debug level 0 - 5')
 
     args = parser.parse_args(args)
 

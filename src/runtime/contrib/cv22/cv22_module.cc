@@ -112,7 +112,7 @@ class CV22Module : public runtime::ModuleNode {
       for (size_t o = 0; o < outputs.size(); ++o, ++out_idx) {
           LOG(INFO) << "Output " << o << ": " << outputs[o];
 
-          std::string out_fname = "/tmp/test_amba/eval/outputs/" + outputs[o] + "_iter_0.bin";
+          std::string out_fname = "/tmp/test_amba/eval/outputs/" + outputs[o] + "_iter0.bin";
           std::ifstream fin;
           fin.open(out_fname, std::ios::binary);
 

@@ -234,6 +234,8 @@ inline const char* DeviceName(int type) {
       return "micro_dev";
     case kDLHexagon:
       return "hexagon";
+    case kDLAmba:
+      return "amba";
     default:
       LOG(FATAL) << "unknown type =" << type;
       return "Unknown";

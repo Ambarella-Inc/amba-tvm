@@ -26,7 +26,8 @@ int GetAmbaTVMLibVersion(void)
 int InitAmbaTVM(void) {
   return 0;
 }
-int InitAmbaEngine(amba_engine_cfg_t * engine_cfg) {
+int InitAmbaEngine(amba_engine_cfg_t * engine_cfg,
+  amba_engine_io_t * engine_input,amba_engine_io_t * engine_output) {
   return 0;
 }
 int SetAmbaEngineInput(amba_engine_cfg_t *engine_cfg,
@@ -52,3 +53,11 @@ int CheckAmbaEngineOutputName(amba_engine_cfg_t * engine_cfg,
   const char * output_name) {
   return 0;
 }
+void* AmbaDeviceAlloc(unsigned long nbytes, unsigned long alignment)
+{
+  return nullptr;
+}
+int AmbaDeviceFree(void* ptr) {
+  return 0;
+}
+

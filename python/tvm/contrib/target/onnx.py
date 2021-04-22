@@ -766,6 +766,7 @@ relay_to_onnx_op_mapping = {
     "nn.lrn": LRN,
     "image.resize": Resize,
     "min": ReduceMin,
+    "sigmoid": rename("Sigmoid"),
 }
 
 
