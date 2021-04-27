@@ -550,6 +550,40 @@ def test_sigmoid():
     for i in isize:
         verify_sigmoid(i)
 
+def test_convtranspose():
+    def verify_convtranspose(dshape, dtype="float32"):
+        wshape = (dshape[1],8,5,5)
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        w = relay.var("w", relay.ty.TensorType(wshape, dtype))
+        y = relay.nn.conv2d_transpose(x, w, strides=(1,1), padding=(2,2,2,2), dilation=(1,1), groups=1, kernel_size=wshape[2:])
+        func = relay.Function([x, w], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        w_data = np.random.uniform(size=wshape).astype(dtype)
+        verify_results(func, [x_data, w_data], "test_convtranspose", rtol=1e-4, atol=1e-4)
+
+    # (TBD) add tests for dilation, strides etc.
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_convtranspose(i)
+
+def test_conv():
+    def verify_conv(dshape, dtype="float32"):
+        wshape = (8,dshape[1],5,5)
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        w = relay.var("w", relay.ty.TensorType(wshape, dtype))
+        y = relay.nn.conv2d(x, w, strides=(1,1), padding=(2,2,2,2), dilation=(1,1), groups=1, kernel_size=wshape[2:])
+        func = relay.Function([x, w], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        w_data = np.random.uniform(size=wshape).astype(dtype)
+        verify_results(func, [x_data, w_data], "test_conv", rtol=1e-4, atol=1e-4)
+
+    # (TBD) add tests for dilation, strides etc.
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_conv(i)
+
 if __name__ == "__main__":
     test_add()
     test_bias_add()
@@ -575,3 +609,5 @@ if __name__ == "__main__":
     test_expand_dims()
     test_resize()
     test_sigmoid()
+    test_convtranspose()
+    test_conv()
