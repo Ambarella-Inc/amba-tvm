@@ -117,6 +117,6 @@ _register_external_op_helper("max")
 #_register_external_op_helper("min")
 _register_external_op_helper("mean")
 _register_external_op_helper("prod")
-#_register_external_op_helper("strided_slice")
+_register_external_op_helper("strided_slice")
 _register_external_op_helper("broadcast_to")
 
