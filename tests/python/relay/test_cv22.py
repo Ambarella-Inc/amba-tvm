@@ -77,7 +77,7 @@ class CV22_TVM_Compilation():
         # check if compilation is running on service or locally
         self.neo_service = self._running_on_service_()
 
-        # import neo loader package either from service or locally
+        # import neo loader package
         self._import_loader_()
 
         # get framework
@@ -123,23 +123,7 @@ class CV22_TVM_Compilation():
         return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ
 
     def _import_loader_(self):
-        LOADER_SERVICE_PATH = '/compiler/neo_shared/modules/'
-        LOADER_LOCAL_PATH = '/home/amba_tvm_release/'
-
-        if self.neo_service:
-            while not isdir(LOADER_SERVICE_PATH):
-                time.sleep(5)
-            self.logger.info('Loading loader from neo service')
-            sys.path.append(LOADER_SERVICE_PATH)
-
-        elif isdir(LOADER_LOCAL_PATH):
-            self.logger.info('Loading local loader')
-            sys.path.append(LOADER_LOCAL_PATH)
-
-        else:
-            err = 'Unable to load neo loader locally (%s) or from neo service (%s)' % (LOADER_LOCAL_PATH, LOADER_SERVICE_PATH) 
-            self._error_(err)
-
+        # https://pypi.org/project/NeoCompilerModelLoaders/
         import neo_loader
 
     def _validate_input_files_(self):
@@ -443,7 +427,7 @@ class CV22_TVM_Compilation():
     def _convert_model_to_ir_(self, model_files, input_shape):
         try:
             from neo_loader import load_model
-            loader = load_model(model_files, input_shape)
+            loader = load_model(model_files, input_shape, self.framework)
 
         except Exception as e:
             self._error_("Loading %s model failed" % self.framework)
