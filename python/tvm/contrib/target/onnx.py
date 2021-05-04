@@ -760,6 +760,7 @@ relay_to_onnx_op_mapping = {
     "nn.batch_norm": BatchNormalization,
     "nn.global_avg_pool2d": rename("GlobalAveragePool"),
     "concatenate": Concat,
+    "copy": rename("Identity"),
     "nn.dropout": Dropout,
     "nn.avg_pool2d": AveragePool,
     "divide": rename("Div"),
