@@ -323,7 +323,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
          output_folder += '/'
 
     # get graph info
-    model_summary, gs_recs = OnnxGraphUtils.determine_graph_info(model_proto, None)
+    model_summary, gs_recs, _ = OnnxGraphUtils.determine_graph_info(model_proto, None)
 
     primary_inputs  = model_summary['PRIMARY_INPUTS']
     primary_outputs = model_summary['PRIMARY_OUTPUTS']
