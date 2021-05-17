@@ -20,7 +20,7 @@
 import sys
 from os import makedirs, listdir, environ, urandom
 from os.path import exists, join, isdir, basename
-from shutil import rmtree
+from shutil import move, rmtree
 import binascii
 import json
 import logging
@@ -46,14 +46,16 @@ def run_command(cmd):
 
 class CV22_TVM_Compilation():
 
-    def __init__(self, model_directory, prebuilt_bins_path, metadata_file, debuglevel=2):
+    def __init__(self, model_directory, output_directory, prebuilt_bins_path, metadata_file, debuglevel=2):
         """
-        model_directory: Directory containing model file (usually /compiler/). Output will be stored in the same directory
+        model_directory: Directory containing model file (usually /compiler/)
+        output_directory: Directory to output finished artifacts
         prebuilt_bins_path: Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so
-        metadata_file: Path to default metadata file 
+        metadata_file: Path to default metadata file
         debuglevel: Debug level (default: 2))
         """
         self.dir = model_directory
+        self.output_dir = output_directory
 
         self.prebuilt_bins_path = prebuilt_bins_path
         self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
@@ -607,7 +609,7 @@ class CV22_TVM_Compilation():
 
         self.metadata['Model']['Outputs'] = outputs.copy()
 
-    def _save_output_to_file_(self):
+    def _save_output_to_dir_(self):
         metadata_file = join(self.tmpdir, self.out_bname + '.meta')
         self._save_dict_to_json_file_(metadata_file, self.metadata)
 
@@ -615,28 +617,16 @@ class CV22_TVM_Compilation():
         self.amba_files.extend(self.prebuilt_bins_fpath)
         self.amba_files.extend([self.aux_files])
 
-        out_fname = self._get_output_fname_()
-        self._save_output_(out_fname)
+        self._save_output_()
 
-        return out_fname
+        return self.output_dir
 
     def _save_dict_to_json_file_(self, json_fname, data):
         with open(json_fname, 'w') as fp:
             json.dump(data, fp, indent=1)
 
-    def _get_output_fname_(self):
-        model_name = basename(self.model)
-        if model_name.endswith('.tar.gz'):
-            model_name = model_name[:len(model_name)-7]
-        else:
-            model_name = model_name[:len(model_name)-4]
-
-        output_name = join(self.dir, model_name+'_compiled.tar.gz')
-
-        return output_name
-
     def _save_output_(self, tar_fname):
-        flist = [f for f in self.output_files if f is not None] 
+        flist = [f for f in self.output_files if f is not None]
         logging.info("{}".format(flist))
         flat_list = []
         for i in flist:
@@ -656,19 +646,18 @@ class CV22_TVM_Compilation():
                 amba_list.append(i)
         logging.info("{}".format(amba_list))
 
-        self._compress_(tar_fname, flat_list, amba_list)
+        self._consolidate_files_(tar_fname, flat_list, amba_list)
 
-    def _compress_(self, tar_fname, flist, alist, amba_folder='amba_files/'):
-        with tarfile.open(tar_fname, 'w:gz') as tar:
-            for item in flist:
-                tar.add(item, arcname=basename(item))
-            for item in alist:
-                tar.add(item, arcname=join(amba_folder, basename(item)))
+    def _consolidate_files_(self, flat_list, amba_list, amba_folder='amba_files/'):
+        for item in flist:
+            move(item, self.output_dir)
+        for item in alist:
+            move(item, join(self.output_dir, amba_folder))
 
 
 def write_status(log, status):
     with open(log, 'w') as f:
-        f.write(status+'\n')
+        f.write(str(status)+'\n')
 
 def makerun(args):
 
@@ -676,13 +665,12 @@ def makerun(args):
     # need /compiler/ folder to write out error message
     if not isdir(args.model_dir):
         makedirs(args.model_dir)
+    if not isdir(args.output_dir):
+        makedirs(args.output_dir)
 
     try:
-        c = CV22_TVM_Compilation(args.model_dir, args.prebuilt_binaries, args.metadata_path, debuglevel=args.verbosity)
+        c = CV22_TVM_Compilation(args.model_dir, args.output_dir, args.prebuilt_binaries, args.metadata_path, debuglevel=args.verbosity)
         out_fname = c.process()
-
-        # COMPILATION_COMPLETE
-        write_status(join(args.model_dir,'COMPILATION_COMPLETE'), out_fname)
 
         print('CV22 compilation successful!')
 
@@ -690,20 +678,27 @@ def makerun(args):
         # write appropriate error message
         logging.exception(e)
         err_str = 'AmbarellaError::' + str(e)
+        err_file = environ.get('SM_NEO_COMPILATION_ERROR_FILE', join(args.output_dir, 'COMPILATION_FAILED'))
 
         # COMPILATION_FAILED
-        write_status(join(args.model_dir,'COMPILATION_FAILED'), err_str)
+        write_status(err_file, err_str)
 
         print('CV22 compilation failed!')
 
 import argparse
 
 def main(args):
+    model_input_dir = environ.get('SM_NEO_INPUT_MODEL_DIR', '/compiler/')
+    model_output_dir = environ.get('SM_NEO_COMPILED_MODEL_DIR', '/compiler/')
+
     parser = argparse.ArgumentParser(description='Script to run tvm compilation for cv22')
 
     parser.add_argument('-d', '--model_dir', type=str, required=False, default='/compiler/',
                         metavar='Directory containing model file',
                         help='Directory containing input <model>.tar.gz')
+    parser.add_argument('-o', '--output_dir', type=str, required=False, default=model_output_dir,
+                        metavar='Directory containing output files',
+                        help='Directory to contain output files')
 
     parser.add_argument('-p', '--prebuilt_binaries', type=str, required=False, default='/home/dlr/prebuild/amba/lib/',
                         metavar='Folder containing pre-built binaries necessary for tvm / dlr compilation and runtime',
