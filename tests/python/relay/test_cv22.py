@@ -56,6 +56,8 @@ class CV22_TVM_Compilation():
         """
         self.dir = model_directory
         self.output_dir = output_directory
+        self.amba_files_dir = join(self.output_dir, 'amba_files/')
+        makedirs(self.amba_files_dir)
 
         self.prebuilt_bins_path = prebuilt_bins_path
         self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
@@ -94,7 +96,7 @@ class CV22_TVM_Compilation():
     def process(self):
         self._convert_to_relay_()
         self._cv22_compilation_()
-        out_fname = self._save_output_to_file_()
+        out_fname = self._save_output_to_dir_()
 
         return out_fname
 
@@ -625,7 +627,7 @@ class CV22_TVM_Compilation():
         with open(json_fname, 'w') as fp:
             json.dump(data, fp, indent=1)
 
-    def _save_output_(self, tar_fname):
+    def _save_output_(self):
         flist = [f for f in self.output_files if f is not None]
         logging.info("{}".format(flist))
         flat_list = []
@@ -646,14 +648,13 @@ class CV22_TVM_Compilation():
                 amba_list.append(i)
         logging.info("{}".format(amba_list))
 
-        self._consolidate_files_(tar_fname, flat_list, amba_list)
+        self._consolidate_files_(flat_list, amba_list)
 
-    def _consolidate_files_(self, flat_list, amba_list, amba_folder='amba_files/'):
-        for item in flist:
+    def _consolidate_files_(self, flat_list, amba_list):
+        for item in flat_list:
             move(item, self.output_dir)
-        for item in alist:
-            move(item, join(self.output_dir, amba_folder))
-
+        for item in amba_list:
+            move(item, self.amba_files_dir)
 
 def write_status(log, status):
     with open(log, 'w') as f:
@@ -661,7 +662,7 @@ def write_status(log, status):
 
 def makerun(args):
 
-    # this is catch the case when script is invoked without model or framework set
+    # this is to catch the case when script is invoked without model or framework set
     # need /compiler/ folder to write out error message
     if not isdir(args.model_dir):
         makedirs(args.model_dir)
@@ -693,7 +694,7 @@ def main(args):
 
     parser = argparse.ArgumentParser(description='Script to run tvm compilation for cv22')
 
-    parser.add_argument('-d', '--model_dir', type=str, required=False, default='/compiler/',
+    parser.add_argument('-d', '--model_dir', type=str, required=False, default=model_input_dir,
                         metavar='Directory containing model file',
                         help='Directory containing input <model>.tar.gz')
     parser.add_argument('-o', '--output_dir', type=str, required=False, default=model_output_dir,
