@@ -20,7 +20,7 @@
 import sys
 from os import makedirs, listdir, environ, urandom
 from os.path import exists, join, isdir, basename
-from shutil import move, rmtree
+from shutil import copy, move, rmtree
 import binascii
 import json
 import logging
@@ -56,8 +56,10 @@ class CV22_TVM_Compilation():
         """
         self.dir = model_directory
         self.output_dir = output_directory
+
         self.amba_files_dir = join(self.output_dir, 'amba_files/')
-        makedirs(self.amba_files_dir)
+        if not isdir(self.amba_files_dir):
+            makedirs(self.amba_files_dir)
 
         self.prebuilt_bins_path = prebuilt_bins_path
         self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
@@ -654,7 +656,7 @@ class CV22_TVM_Compilation():
         for item in flat_list:
             move(item, self.output_dir)
         for item in amba_list:
-            move(item, self.amba_files_dir)
+            copy(item, self.amba_files_dir)
 
 def write_status(log, status):
     with open(log, 'w') as f:
