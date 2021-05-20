@@ -20,7 +20,7 @@
 import sys
 from os import makedirs, listdir, environ, urandom
 from os.path import exists, join, isdir, basename
-from shutil import copy, move, rmtree
+from shutil import copy, rmtree
 import binascii
 import json
 import logging
@@ -46,7 +46,7 @@ def run_command(cmd):
 
 class CV22_TVM_Compilation():
 
-    def __init__(self, model_directory, output_directory, prebuilt_bins_path, metadata_file, debuglevel=2):
+    def __init__(self, model_directory, output_directory, prebuilt_bins_path, metadata_file, tar_output, debuglevel=2):
         """
         model_directory: Directory containing model file (usually /compiler/)
         output_directory: Directory to output finished artifacts
@@ -57,7 +57,8 @@ class CV22_TVM_Compilation():
         self.dir = model_directory
         self.output_dir = output_directory
 
-        self.amba_files_dir = join(self.output_dir, 'amba_files/')
+        self.amba_folder = 'amba_files/'
+        self.amba_files_dir = join(self.output_dir, self.amba_folder)
         if not isdir(self.amba_files_dir):
             makedirs(self.amba_files_dir)
 
@@ -94,6 +95,9 @@ class CV22_TVM_Compilation():
 
         # read metadata to dict
         self.metadata = self._init_metadata_(metadata_file)
+
+        # save output to tar file?
+        self.tar_output = tar_output
 
     def process(self):
         self._convert_to_relay_()
@@ -621,15 +625,27 @@ class CV22_TVM_Compilation():
         self.amba_files.extend(self.prebuilt_bins_fpath)
         self.amba_files.extend([self.aux_files])
 
-        self._save_output_()
+        out_fname = self._get_output_fname_()
+        self._save_output_(out_fname)
 
         return self.output_dir
+
+    def _get_output_fname_(self):
+        model_name = basename(self.model)
+        if model_name.endswith('.tar.gz'):
+            model_name = model_name[:len(model_name)-7]
+        else:
+            model_name = model_name[:len(model_name)-4]
+
+        output_name = join(self.dir, model_name+'_compiled.tar.gz')
+
+        return output_name
 
     def _save_dict_to_json_file_(self, json_fname, data):
         with open(json_fname, 'w') as fp:
             json.dump(data, fp, indent=1)
 
-    def _save_output_(self):
+    def _save_output_(self, out_fname):
         flist = [f for f in self.output_files if f is not None]
         logging.info("{}".format(flist))
         flat_list = []
@@ -652,11 +668,21 @@ class CV22_TVM_Compilation():
 
         self._consolidate_files_(flat_list, amba_list)
 
+        if self.tar_output:
+            self._compress_(out_fname, flat_list, amba_list)
+
     def _consolidate_files_(self, flat_list, amba_list):
         for item in flat_list:
-            move(item, self.output_dir)
+            copy(item, self.output_dir)
         for item in amba_list:
             copy(item, self.amba_files_dir)
+
+    def _compress_(self, tar_fname, flist, alist):
+        with tarfile.open(tar_fname, 'w:gz') as tar:
+            for item in flist:
+                tar.add(item, arcname=basename(item))
+            for item in alist:
+                tar.add(item, arcname=join(self.amba_folder, basename(item)))
 
 def write_status(log, status):
     with open(log, 'w') as f:
@@ -672,7 +698,7 @@ def makerun(args):
         makedirs(args.output_dir)
 
     try:
-        c = CV22_TVM_Compilation(args.model_dir, args.output_dir, args.prebuilt_binaries, args.metadata_path, debuglevel=args.verbosity)
+        c = CV22_TVM_Compilation(args.model_dir, args.output_dir, args.prebuilt_binaries, args.metadata_path, args.tar_output, debuglevel=args.verbosity)
         out_fname = c.process()
 
         print('CV22 compilation successful!')
@@ -699,6 +725,7 @@ def main(args):
     parser.add_argument('-d', '--model_dir', type=str, required=False, default=model_input_dir,
                         metavar='Directory containing model file',
                         help='Directory containing input <model>.tar.gz')
+
     parser.add_argument('-o', '--output_dir', type=str, required=False, default=model_output_dir,
                         metavar='Directory containing output files',
                         help='Directory to contain output files')
@@ -714,6 +741,9 @@ def main(args):
     parser.add_argument('-v', '--verbosity', type=int, required=False, default=2,
                         metavar='Debug level 0 - 5',
                         help='Debug level 0 - 5')
+
+    parser.add_argument('-t', '--tar_output', action='store_true', required=False,
+                        help='Save output to tar.gz')
 
     args = parser.parse_args(args)
 
