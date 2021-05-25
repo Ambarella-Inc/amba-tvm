@@ -437,7 +437,7 @@ class CV22_TVM_Compilation():
     def _convert_model_to_ir_(self, model_files, input_shape):
         try:
             from neo_loader import load_model
-            loader = load_model(model_files, input_shape, self.framework)
+            loader = load_model(model_files, input_shape)
 
         except Exception as e:
             self._error_("Loading %s model failed" % self.framework)
