@@ -798,6 +798,7 @@ relay_to_onnx_op_mapping = {
     "min": ReduceMin,
     "sigmoid": rename("Sigmoid"),
     "cast": Cast,
+    "round": rename("Round"),
 }
 
 
