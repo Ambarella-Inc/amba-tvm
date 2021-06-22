@@ -597,6 +597,21 @@ def test_copy():
     for i in isize:
         verify_copy(i)
 
+def test_cast():
+    def verify_cast(dshape, dtype):
+        x = relay.var("x", relay.ty.TensorType(dshape, "float32"))
+        y = relay.cast(x, dtype)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype("float32")
+        verify_results(func, [x_data], "test_round", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640), (1,3,224,224)]
+    out_dtypes = ['int8', 'int16', 'uint8', 'uint16']
+
+    for i in isize:
+        for d in out_dtypes:
+            verify_cast(i, d)
+
 if __name__ == "__main__":
     test_add()
     test_bias_add()
@@ -625,3 +640,4 @@ if __name__ == "__main__":
     test_convtranspose()
     test_conv()
     test_copy()
+    test_cast()
