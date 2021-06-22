@@ -747,6 +747,17 @@ class Resize(OpConverter):
         resize_node = onnx.helper.make_node(cls.__name__, input_names, node_entry["output_names"], mode=attrs["mode"], coordinate_transformation_mode=attrs["coord_trans"])
         model_container.add_nodes([resize_node])
 
+class Cast(OpConverter):
+    """ Operator converter for Cast.
+    """
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        from onnx import TensorProto
+        return {
+            'to': getattr(TensorProto, attrs.dtype.upper())
+        }
+
 relay_to_onnx_op_mapping = {
     "reshape": Reshape,
     "nn.conv2d": Conv,
@@ -786,6 +797,7 @@ relay_to_onnx_op_mapping = {
     "image.resize": Resize,
     "min": ReduceMin,
     "sigmoid": rename("Sigmoid"),
+    "cast": Cast,
 }
 
 
