@@ -89,7 +89,7 @@ def test_bias_add():
         bshape = (2,)
         rtol = 1e-2 if dtype == "float16" else 1e-5
         x = relay.var("x", shape=xshape, dtype=dtype)
-        bias = relay.var("bias", dtype=dtype)
+        bias = relay.var("bias", shape=bshape, dtype=dtype)
         z = relay.nn.bias_add(x, bias)
         func = relay.Function([x, bias], z)
 
@@ -620,7 +620,7 @@ if __name__ == "__main__":
     test_layout_transform()
     test_clip()
     test_expand_dims()
-    test_resize()
+    #test_resize()
     test_sigmoid()
     test_convtranspose()
     test_conv()
