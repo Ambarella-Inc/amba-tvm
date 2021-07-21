@@ -17,6 +17,7 @@
 """cvflow compilation code"""
 
 import os
+from os.path import join, isdir, isfile
 import sys
 import subprocess
 import onnx
@@ -26,6 +27,7 @@ import json
 import ctypes
 import re
 from enum import Enum
+from queue import Queue
 
 import tvm
 from tvm import relay
@@ -58,6 +60,7 @@ else:
 
 import cvflowbackend
 from cvflowbackend.ir_utils import ir_helper
+from cvflowbackend.prepare_stage import schema
 from frameworklibs.onnx import onnx_graph_utils as OnnxGraphUtils
 
 class VarReplacer(ExprMutator):
@@ -133,7 +136,6 @@ def PruneSubgraphs(mod, prune_first=False):
         first_subgraph = get_first_subgraph(mod)
         subgraphs_names_to_remove = {x[0] for x in subgraphs_with_macs}
         print(type(subgraphs_names_to_remove))
-        #input('check')
         subgraph_to_keep = subgraphs_names_to_remove.remove(first_subgraph)
 
         print('check first')
@@ -213,88 +215,10 @@ class tags(Enum):
     MEAN   = 'mean'
     SCALE  = 'scale'
 
-def create_rand_dra(primary_inputs, output_folder):
-    '''
-    Create DRA files with random float32 values
-    Inputs:
-    primary_inputs: {input tensor name: shape}
-    output_folder:  folder to store dra files in
-    Outputs:
-    dra_dict: {input tensor name: (shape, dra bin filename)}
-    '''
-
-    dra_dict = {}
-    for i in primary_inputs:
-        ishape = primary_inputs[i]
-
-        data = np.random.randint(0, 100, ishape).astype(np.float32)
-
-        fname = output_folder + i + '_dra.bin'
-        data.tofile(fname)
-
-        dra_fname = output_folder + i + '_dra.txt'
-        with open(dra_fname, 'w') as dra_file:
-            dra_file.write(fname)
-
-        dra_dict[i] = {
-                       tags.SHAPE.value: ishape,
-                       tags.FPATH.value: dra_fname
-                      }
-
-    return dra_dict
-
-def create_splits_json(dra_dict, primary_outputs, vp_name, output_folder, gs_recs):
-    '''
-    Create splits json for cvflow backend prepare
-    Inputs:
-    dra_dict: {input tensor name: {shape:shape, filepath:dra bin filename, ...} }
-    vp_name:  vp subgraph name
-    primary_outputs: {output tensor name: shape}
-    Outputs:
-    splits_json_dict: See spec
-    '''
-
-    begin_dict = dra_dict.copy()
-
-    # temp workaround
-    for i in dra_dict:
-        begin_dict[i]['file'] = dra_dict[i][tags.FPATH.value]
-        del begin_dict[i][tags.FPATH.value]
-        del begin_dict[i][tags.CFMT.value]
-
-    end_dict = {}
-    for o in primary_outputs:
-        end_dict[o] = {tags.DTYPE.value: 'float32'}
-
-    attr_dict = {}
-    #attr_dict['cnngen_flags'] = '-c coeff-force-fx16,act-force-fx16'
-    attr_dict['cnngen_flags'] = ''
-    attr_dict['vas_flags'] = '-v'
-
-    graph_surgery_transforms = []
-    if gs_recs['MOD_NODE_NAMES']:
-        graph_surgery_transforms.append('ModNodeNames')
-    if gs_recs['FOLD_CONSTANTS']:
-        graph_surgery_transforms.append('FoldConstants')
-    attr_dict['graph_surgery_transforms'] = ','.join(graph_surgery_transforms)
-
-    vp_dict = {}
-    vp_dict['type']  = 'ORCVP'
-    vp_dict['begin'] = dra_dict 
-    vp_dict['end']   = end_dict
-    vp_dict['attr']  = attr_dict
-
-    splits_json = {}
-    splits_json[vp_name] = copy.deepcopy(vp_dict)
-
-    splits_json_fname = output_folder + vp_name + '_splits.json'
-    with open(splits_json_fname, 'w') as json_file:
-        json.dump(splits_json, json_file, indent=1)
-
-    return splits_json_fname
 
 def set_env_variable(key, value):
     os.environ[key] = value
+
 
 def run_command(cmd):
     """Run command, return output as string."""
@@ -302,50 +226,370 @@ def run_command(cmd):
     output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
     return output.decode("ascii")
 
-# flatten i/o using graph surgery
-def flatten_io(in_model_proto):
 
-    gs_path = run_command('tv2 -basepath frameworklibs').strip()
-    sys.path.append(os.path.join(gs_path, 'lib/python3.7/site-packages/frameworklibs/onnx/'))
+def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config):
 
-    from onnx_transform import OnnxGraphTransform
-    gs = OnnxGraphTransform(model=in_model_proto)
-    out_model_proto = gs.apply_transforms(transforms='FlattenIO')
 
-    return out_model_proto
+    def create_metablock(name, block_type, inputs, outputs, attrs={}):
+        return schema.Block(name, block_type, inputs, outputs, attrs)
 
-def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config=None):
+
+    def create_metatensor(name, shape=None, dtype=None, data=None, extn=None, init=None):
+        meta_tensor = schema.Tensor(
+            name=name,
+            shape=shape,
+            dtype=dtype,
+            data=data,
+            extn=extn,
+            init=init
+        )
+
+        return meta_tensor
+
+
+    def create_input_tensor(input_tensor_name, shape, dtype, dra_file, extn, first_node):
+        if first_node:
+            meta_tensor = create_metatensor(
+                name=input_tensor_name,
+                shape=shape,
+                dtype=dtype,
+                data=dra_file,
+                extn=extn
+            )
+
+        else:
+            meta_tensor = create_metatensor(name=input_tensor_name)
+
+        return meta_tensor
+
+
+    def flatten_if_needed(const_arr, orig_inp_sh, flattened_sh):
+
+        if orig_inp_sh == flattened_sh:
+            return const_arr
+
+        # broadcast to original shape
+        const_arr = np.broadcast_to(const_arr, orig_inp_sh)
+
+        # flatten
+        const_arr_flat = const_arr.flatten()
+
+        return const_arr_flat
+
+
+    def transpose_if_needed(const_arr, flattened_sh):
+
+        # (TBD): remove this once schema validator is added
+        if len(const_arr.shape) != 1:
+            raise ValueError("Unsupported mean/scale. Only 1D is supported, got %s" % const_arr.shape)
+
+        num_elems = const_arr.shape[0]
+        if num_elems == 1:
+            return const_arr
+
+        unhandled_case = False
+
+        if len(flattened_sh) == 1:
+            pass
+
+        elif len(flattened_sh) == 2:
+            unhandled_case = True
+
+        elif len(flattened_sh) == 3:
+            if flattened_sh[0] == num_elems:
+                # matches depth
+                const_arr = np.reshape(const_arr, (num_elems,1,1))
+            elif flattened_sh[2] == num_elems:
+                pass
+            else:
+                unhandled_case = True
+
+        elif len(flattened_sh) == 4:
+            if flattened_sh[1] == num_elems:
+                # matches depth
+                const_arr = np.reshape(const_arr, (1,num_elems,1,1))
+            elif flattened_sh[3] == num_elems:
+                pass
+            else:
+                unhandled_case = True
+
+        if unhandled_case:
+            raise ValueError(
+                "Unsupported case in transpose_if_needed: flattened_sh (%s), const_arr sh (%s)" %
+                (flattened_sh, const_arr.shape)
+            )
+
+        return const_arr
+
+
+    def create_const_tensor(const_tensor_name, const_list, orig_inp_sh, flattened_sh, output_folder):
+
+        updated_const_arr = flatten_if_needed(np.array(const_list), orig_inp_sh, flattened_sh).astype(np.float32)
+        updated_const_arr = transpose_if_needed(updated_const_arr, flattened_sh)
+        shape = updated_const_arr.shape
+
+        const_fname = join(output_folder, const_tensor_name + ".bin")
+        updated_const_arr.tofile(const_fname)
+
+        const_meta_tensor = create_metatensor(
+            name=const_tensor_name,
+            shape=shape,
+            dtype="float32",
+            init=const_fname
+        )
+
+        return const_meta_tensor
+
+
+    def create_preproc_node(sgl_type, const_list, tensor_names_q, inp_cfg, pr_inp_shape, output_folder, first_node):
+
+        # input tensor names
+        input_tensor_name = tensor_names_q.get()
+        const_tensor_name = tensor_names_q.get()
+
+        # output tensor name
+        # do not pop since it will be used as the input of next node
+        output_tensor_name = tensor_names_q.queue[0]
+
+        # input tensor
+        input_meta_tensor = create_input_tensor(
+            input_tensor_name,
+            pr_inp_shape,
+            inp_cfg[tags.DTYPE.value],
+            inp_cfg[tags.FPATH.value],
+            inp_cfg[tags.EXTN.value],
+            first_node
+        )
+        first_node = False
+
+        # const tensor
+        const_meta_tensor = create_const_tensor(
+            const_tensor_name,
+            const_list,
+            inp_cfg[tags.SHAPE.value],
+            pr_inp_shape,
+            output_folder
+        )
+
+        # output tensor
+        output_meta_tensor = create_metatensor(name=output_tensor_name)
+
+        pp_node = create_metablock(
+            output_tensor_name,
+            sgl_type,
+            [input_meta_tensor, const_meta_tensor],
+            [output_meta_tensor],
+        )
+
+        return pp_node, first_node
+
+
+    def create_vp_node(node_name, tensor_names_q, inp_cfg, pr_inp_shape, first_node, gs_recs):
+
+        # NOTE: only single input is currently supported
+        input_tensor_name = tensor_names_q.get()
+
+        input_meta_tensor = create_input_tensor(
+            input_tensor_name,
+            pr_inp_shape,
+            inp_cfg[tags.DTYPE.value],
+            inp_cfg[tags.FPATH.value],
+            inp_cfg[tags.EXTN.value],
+            first_node
+        )
+
+        outputs = []
+        while not tensor_names_q.empty():
+            outputs.append(create_metatensor(name=tensor_names_q.get(), dtype='float32'))
+
+        attr_dict = {}
+        attr_dict['cnngen_flags'] = '' # '-c coeff-force-fx16,act-force-fx16'
+        attr_dict['vas_flags'] = '-v'
+
+        graph_surgery_transforms = []
+        if gs_recs['MOD_NODE_NAMES']:
+            graph_surgery_transforms.append('ModNodeNames')
+        if gs_recs['FOLD_CONSTANTS']:
+            graph_surgery_transforms.append('FoldConstants')
+        attr_dict['graph_surgery_transforms'] = ','.join(graph_surgery_transforms)
+
+        vp_node = create_metablock(
+            node_name,
+            'VP',
+            [input_meta_tensor],
+            outputs,
+            attr_dict
+        )
+
+        return vp_node
+
+
+    def create_graph_desc(vp_name, input_config, primary_inputs, primary_outputs, input_preproc_mapping, gs_recs, output_folder):
+
+        # working on one input
+
+        # remap input_config keys to that in the relay -> onnx converted tensor names
+        pr_inp = list(primary_inputs.keys())[0]
+        cf_inp = list(input_config.keys())[0]
+
+        inp_cfg = input_config[cf_inp]
+
+        mangled_name = pr_inp
+        orig_name = input_preproc_mapping[pr_inp]
+
+        # create meta blocks for mean, scale and VP
+
+        # boolean flag to identify first node
+        # attrs like dra file, ... will be added only to the first node
+        first_node = True
+
+        # tensor name queue: tensor names have to be adjusted based on presence of mean and scale preproc ops
+        # no preproc:
+        #   score = VP(data)
+        # mean:
+        #   data_mean = Sub(data, mean_const)
+        #   score = VP(data_mean)
+        # mean, scale:
+        #   data_mean = Sub(data, mean_const)
+        #   data_scale = Div(data_mean, scale_const)
+        #   score = VP(data_scale)
+        tensor_names = Queue()
+
+        tensor_names.put(orig_name)
+
+        if tags.MEAN.value in input_config[cf_inp]:
+            tensor_names.put(orig_name + '_mean_const')
+
+            # out tensor name depends on scale
+            if tags.SCALE.value in input_config[cf_inp]:
+                tensor_names.put(orig_name + '_mean')
+
+        if tags.SCALE.value in input_config[cf_inp]:
+            tensor_names.put(orig_name + '_scale_const')
+
+        if (tags.MEAN.value in input_config[cf_inp]) or (tags.SCALE.value in input_config[cf_inp]):
+            tensor_names.put(mangled_name)
+
+        for o in primary_outputs:
+            tensor_names.put(o)
+
+        graph_desc = []
+
+        if tags.MEAN.value in input_config[cf_inp]:
+            mean_node, first_node = create_preproc_node(
+                'SGL::Sub',
+                inp_cfg[tags.MEAN.value],
+                tensor_names,
+                inp_cfg,
+                primary_inputs[pr_inp],
+                output_folder,
+                first_node
+            )
+            graph_desc.append(mean_node)
+
+        if tags.SCALE.value in input_config[cf_inp]:
+            scale_node, first_node = create_preproc_node(
+                'SGL::Div',
+                inp_cfg[tags.SCALE.value],
+                tensor_names,
+                inp_cfg,
+                primary_inputs[pr_inp],
+                output_folder,
+                first_node
+            )
+            graph_desc.append(scale_node)
+
+        vp_node = create_vp_node(
+            vp_name,
+            tensor_names,
+            inp_cfg,
+            primary_inputs[pr_inp],
+            first_node,
+            gs_recs
+        )
+        graph_desc.append(vp_node)
+
+        return graph_desc
+
+
+    def import_graph_surgery():
+        gs_path = run_command('tv2 -basepath frameworklibs').strip()
+        sys.path.append(join(gs_path, 'lib/python3.7/site-packages/frameworklibs/onnx/'))
 
     # flatten i/o using graph surgery
-    model_proto = flatten_io(model_proto)
+    def flatten_io(in_model_proto):
 
-    if not output_folder.endswith('/'):
-         output_folder += '/'
+        from onnx_transform import OnnxGraphTransform
+        gs = OnnxGraphTransform(model=in_model_proto)
+        out_model_proto = gs.apply_transforms(transforms='FlattenIO')
 
-    # get graph info
-    model_summary, gs_recs, _ = OnnxGraphUtils.determine_graph_info(model_proto, None)
+        return out_model_proto
 
-    primary_inputs  = model_summary['PRIMARY_INPUTS']
-    primary_outputs = model_summary['PRIMARY_OUTPUTS']
 
-    # (DEBUG) use random images for DRA if not provided by user
-    if input_config is None:
-        dra_dict = create_rand_dra(primary_inputs, output_folder)
+    def rename_input_tensors(model_proto, input_config):
 
-    # remap input_config keys to that in the relay -> onnx converted tensor names
-    # (TBD) map tensor names in original model (input_config) with those in relay -> onnx converted model (primary *puts)
-    else:
+        # get graph info
+        model_summary = OnnxGraphUtils.determine_graph_info(model_proto, None)[0]
+        primary_inputs = model_summary['PRIMARY_INPUTS']
+
         if len(primary_inputs) != 1:
             raise ValueError('[CvflowCompilation] unsupported case: only single input is supported')
 
-        dra_dict = {}
-        for i in primary_inputs:
-            _name = list(input_config.keys())[0]
-            dra_dict[i] = input_config[_name].copy()
-            dra_dict[i][tags.SHAPE.value] = primary_inputs[i]
+        pr_inp = list(primary_inputs.keys())[0]
+        cf_inp = list(input_config.keys())[0]
 
-    # create splits json file
-    graphdesc_path = create_splits_json(dra_dict, primary_outputs, output_name, output_folder, gs_recs)
+        # maps preproc name to input
+        input_preproc_mapping = {}
+        if (tags.MEAN.value in input_config[cf_inp]) or (tags.SCALE.value in input_config[cf_inp]):
+            input_preproc_mapping[pr_inp+'_preproc'] = pr_inp
+
+        if input_preproc_mapping:
+            transform_str = 'RenameTensors('
+
+            for i in input_preproc_mapping:
+                transform_str += input_preproc_mapping[i]
+                transform_str += '='
+                transform_str += i
+                transform_str += ','
+
+            transform_str +=')'
+
+            from onnx_transform import OnnxGraphTransform
+            gs = OnnxGraphTransform(model=model_proto)
+            model_proto = gs.apply_transforms(transforms=transform_str)
+
+        # (TBD): this is done to avoid conditional code downstream
+        # (TBD): implement a better logic as this won't work for multi inputs case
+        else:
+            input_preproc_mapping[pr_inp] = pr_inp
+
+        return model_proto, input_preproc_mapping
+
+
+    def run_graph_surgery(model_proto, input_config):
+
+        import_graph_surgery()
+
+        # flatten i/o using graph surgery
+        model_proto = flatten_io(model_proto)
+
+        # rename input tensors if there are any preproc operations
+        # this is done to ensure that primary input name remains the same even with preproc
+        model_proto, input_preproc_mapping = rename_input_tensors(model_proto, input_config)
+
+        return model_proto, input_preproc_mapping
+
+
+    ###############################################################################################
+
+
+    # run graph surgery transforms like FlattenIO, RenameTensors
+    model_proto, input_preproc_mapping = run_graph_surgery(model_proto, input_config)
+
+    # get graph info
+    model_summary, gs_recs, _ = OnnxGraphUtils.determine_graph_info(model_proto, None)
+    primary_inputs  = model_summary['PRIMARY_INPUTS']
+    primary_outputs = model_summary['PRIMARY_OUTPUTS']
 
     # update metadata (non service case) with the correct input and output info
     if metadata:
@@ -364,50 +608,60 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     # set outputs list as env variable
     # this will be used by codegen
     pr_outputs_list = list(primary_outputs.keys())
-
     set_env_variable('CV22_OUTPUTS_LIST', ','.join(pr_outputs_list))
 
-    graphdesc_bytes = None
-    with open(graphdesc_path, mode='rb') as f:
-        graphdesc_bytes = f.read()
+    # create splits json
+    graph_desc = create_graph_desc(
+        output_name,
+        input_config,
+        primary_inputs,
+        primary_outputs,
+        input_preproc_mapping,
+        gs_recs,
+        output_folder
+    )
+    schema.dump_json(graph_desc, join(output_folder, output_name+'_splits.json'))
+    print('Saved splits json: %s' % join(output_folder, output_name+'_splits.json'))
 
-    ckpt_ambapb = cvflowbackend.prepare(model_proto.SerializeToString(), \
-                                        graphdesc_bytes, \
-                                        'onnx', \
-                                        metagraph_type='fast_checkpoint', \
-                                        output_name=output_name, \
-                                        output_folder=output_folder, \
-                                        log_dir=output_folder+'/logs')
+    ckpt_ambapb = cvflowbackend.prepare(
+        model=model_proto.SerializeToString(),
+        graph_desc=graph_desc,
+        framework='onnx',
+        metagraph_type='fast_checkpoint',
+        output_name=output_name,
+        output_folder=output_folder,
+        log_dir=join(output_folder, 'logs')
+    )
 
     # generate cavalry bin
 
     # roundabout way - convert fast checkpoint to checkpoint
     # this generates vas artifacts which can be used to generate 
     # cavalry bin
-    _output_folder = output_folder + 'cavalry/'
-    ckpt_ambapb = cvflowbackend.convert(ckpt_ambapb.SerializeToString(),
-                                        metagraph_type='checkpoint',
-                                        output_name=output_name,
-                                        output_folder=_output_folder)
+    cavalry_outf = join(output_folder, 'cavalry')
+    ckpt_ambapb = cvflowbackend.convert(
+        ckpt_ambapb.SerializeToString(),
+        metagraph_type='checkpoint',
+        output_name=output_name,
+        output_folder=cavalry_outf
+    )
 
-    save_path = ir_helper.save_model(ckpt_ambapb, \
-                                     output_name, \
-                                     output_folder)
+    save_path = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
 
-    vas_out_dir = _output_folder + 'ambacnn_out/' + output_name + '/vas_output/'
-    if not os.path.isdir(vas_out_dir):
+    vas_out_dir = join(cavalry_outf, 'ambacnn_out', output_name, 'vas_output')
+    if not isdir(vas_out_dir):
         raise ValueError('Vas output folder (%s) not found' % vas_out_dir)
 
-    cavalry_bin_fname = output_folder + output_name + '.amba'
-
+    cavalry_bin_fname = join(output_folder, output_name+'.amba')
     cavalry_cmd = 'cavalry_gen -d ' + vas_out_dir + ' -f ' + cavalry_bin_fname
     os.system(cavalry_cmd)
 
     # check if bin was generated
-    if not os.path.isfile(cavalry_bin_fname):
+    if not isfile(cavalry_bin_fname):
         raise ValueError('Cavalry bin (%s) not generated' % cavalry_bin_fname)
 
     return save_path
+
 
 def GetCvflowExecutionMode():
         env_var = os.environ.get('CV22_EMULATOR')
@@ -557,8 +811,8 @@ class CVFlowTVMWrapper():
             import subprocess
             libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
             libpath = libpath.decode().rstrip('\n')
-            tv2_p = os.path.join(libpath, 'parser/common/')
-            if os.path.isdir(tv2_p):
+            tv2_p = join(libpath, 'parser/common/')
+            if isdir(tv2_p):
                 if tv2_p not in sys.path:
                     sys.path.append(tv2_p)
             else:
