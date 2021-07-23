@@ -27,6 +27,8 @@ import logging
 import tarfile
 import time
 import numpy as np
+import subprocess
+import argparse
 logging.basicConfig(level=logging.DEBUG)
 
 # tvm imports
@@ -35,12 +37,24 @@ from tvm import relay
 from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
 
+import tvm.relay.op.contrib.cv22
+from tvm.relay.backend.contrib.cv22 import tags as T
+from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, PartitionOneToModule, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
+
+# https://pypi.org/project/NeoCompilerModelLoaders/
+import neo_loader
+from neo_loader import load_model
+from neo_loader import find_archive
+from neo_loader import extract_model_artifacts
+
 # onnx imports
 from tvm.contrib.target.onnx import to_onnx
 
+# cvflow imports
+from frameworklibs.common import json_schema
+
 def run_command(cmd):
     """Run command, return output as string."""
-    import subprocess
     output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
     return output.decode("ascii")
 
@@ -84,9 +98,6 @@ class CV22_TVM_Compilation():
         # check if compilation is running on service or locally
         self.neo_service = self._running_on_service_()
 
-        # import neo loader package
-        self._import_loader_()
-
         # get framework
         self.framework = self._get_framework_()
 
@@ -114,7 +125,6 @@ class CV22_TVM_Compilation():
         raise Exception(err)
 
     def _init_logger_(self, debuglevel):
-        import subprocess
         libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
         libpath = libpath.decode().rstrip('\n')
         tv2_p = join(libpath, 'parser/common/')
@@ -131,10 +141,6 @@ class CV22_TVM_Compilation():
 
     def _running_on_service_(self):
         return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ
-
-    def _import_loader_(self):
-        # https://pypi.org/project/NeoCompilerModelLoaders/
-        import neo_loader
 
     def _validate_input_files_(self):
         model_file = self._get_model_file_()
@@ -163,7 +169,6 @@ class CV22_TVM_Compilation():
         """
         model = []
         if self._running_on_service_():
-            from neo_loader import find_archive
             return find_archive()
 
         for f in listdir(self.dir):
@@ -349,7 +354,6 @@ class CV22_TVM_Compilation():
         rmtree(model_path, ignore_errors=True)
         makedirs(model_path)
 
-        from neo_loader import extract_model_artifacts
         model_files = extract_model_artifacts(self.model, model_path)
 
         config_json = None
@@ -365,14 +369,96 @@ class CV22_TVM_Compilation():
             err = 'Config file (config.json) not in %s' % model_path
             self._error_(err)
 
-        ## CONFIG STUFF
-        # (TBD) move to a func
+        # read and parse config file
+        input_shape = self._parse_config_(config_json, model_path)
 
-        # read config
-        input_config = self._parse_config_(config_json)
+        # parse model file and convert to relay
+        self.module, self.params, self.aux_files, self.metadata = self._convert_model_to_relay_(model_files, input_shape)
+
+    def _run_schema_validator_(self, config):
+
+        CONFIG_SCHEMA = {
+            "$schema" : "http://json-schema.org/draft-07/schema",
+            "title" : "Ambarella Neo Compilation Spec",
+            "description" : "Input config spec for cvflow compilation on neo sagemaker service",
+
+            "definitions" : {
+                "inputs" : {
+                    "type" : "object",
+
+                    "properties" : {
+                        "type": "object",
+
+                        "properties" : {
+                            T.SHAPE.value : {
+                                "anyOf" : [
+                                    {
+                                        "type" : "array",
+                                        "items" : {"type" : "integer"},
+                                        "minItems": 1,
+                                    },
+                                    {"type" : "integer"}
+                                ]
+                            },
+
+                            T.FPATH.value : {"type" : "string"},
+
+                            T.CFMT.value : {"enum" : ["RGB", "BGR"]},
+
+                            T.MEAN.value : {
+                                "anyOf" : [
+                                    {
+                                        "type" : "array",
+                                        "items" : {"type" : "number"},
+                                        "minItems": 1,
+                                    },
+                                    {"type" : "number"}
+                                ]
+                            },
+
+                            T.SCALE.value : {
+                                "anyOf" : [
+                                    {
+                                        "type" : "array",
+                                        "items" : {"type" : "number"},
+                                        "minItems" : 1,
+                                    },
+                                    {"type" : "number"}
+                                ]
+                            },
+                        },
+
+                        "required" : [T.SHAPE.value, T.FPATH.value],
+
+                        "additionalProperties" : False,
+                    },
+
+                    "additionalProperties" : False
+                },
+
+                T.SDK.value : {"enum" : ["linux", "ambalink"]},
+            }
+        }
+
+        validator = json_schema.SchemaValidator(schema=CONFIG_SCHEMA)
+        validator.validate(definition=config)
+
+    def _parse_config_(self, config_json, model_path):
+
+        # read json config
+        with open(config_json) as f:
+            config_data = json.load(f)
+
+        # validate
+        self._run_schema_validator_(config_data)
+
+        input_config = config_data['inputs']
+
+        # check for sdk
+        # default: linux
+        sdk = config_data.get(T.SDK.value, 'linux')
 
         # create a txt file for DRA
-        from tvm.relay.backend.contrib.cv22 import tags as T
 
         input_shape = {}
 
@@ -416,27 +502,13 @@ class CV22_TVM_Compilation():
             if T.SCALE.value in items:
                 input_config[name][T.SCALE.value] = self._list_from_str_(items[T.SCALE.value], float)
 
-        ## (END) CONFIG 
-
-        # parse model file and convert to relay
-        self.module, self.params, self.aux_files, self.metadata = self._convert_model_to_relay_(model_files, input_shape)
-
+        self.sdk = sdk
         self.input_config = input_config
 
-    def _parse_config_(self, config_json):
-        with open(config_json) as f:
-            config_data = json.load(f)
-
-        if 'inputs' not in config_data:
-            self._error_('"inputs" not found in config')
-
-        input_config = config_data['inputs']
-
-        return input_config
+        return input_shape
 
     def _convert_model_to_ir_(self, model_files, input_shape):
         try:
-            from neo_loader import load_model
             loader = load_model(model_files, input_shape)
 
         except Exception as e:
@@ -501,10 +573,6 @@ class CV22_TVM_Compilation():
         8) Serialize to files
         """
         try:
-            # cvflow imports
-            import tvm.relay.op.contrib.cv22
-            from tvm.relay.backend.contrib.cv22 import set_env_variable, PruneSubgraphs, PartitionsToModules, PartitionOneToModule, GetCvflowExecutionMode, CvflowCompilation, CVFlowTVMWrapper
-            #"""
             self.logger.debug("---------- Infer relay expression type ----------")
             mod = transform.InferType()(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
@@ -567,7 +635,8 @@ class CV22_TVM_Compilation():
                                               output_name=mod_name, \
                                               output_folder=output_folder, \
                                               metadata=self.metadata['Model'], \
-                                              input_config=input_config)
+                                              input_config=input_config, \
+                                              sdk=self.sdk)
                 self.logger.info('Saved compiled model to: %s\n' % save_path)
 
                 ambapb_fname = mod_name + '.ambapb.ckpt.onnx'
@@ -714,7 +783,6 @@ def makerun(args):
 
         print('CV22 compilation failed!')
 
-import argparse
 
 def main(args):
     model_input_dir = environ.get('SM_NEO_INPUT_MODEL_DIR', '/compiler/')
