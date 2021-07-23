@@ -20,27 +20,16 @@ import os
 from os.path import join, isdir, isfile
 import sys
 import subprocess
-import onnx
-import copy
 import numpy as np
-import json
-import ctypes
-import re
 from enum import Enum
 from queue import Queue
+from shutil import copy
 
+# tvm imports
 import tvm
 from tvm import relay
-from tvm import topi
-from tvm.topi.utils import get_const_tuple
-
-from tvm.relay.expr_functor import ExprMutator, ExprVisitor
-from tvm.relay.expr import Call, Constant, Tuple, GlobalVar
-from tvm.ir import Op
-from tvm.relay.function import Function
-from tvm.relay import transform
-from tvm.relay.build_module import bind_params_by_name
-from tvm.contrib import graph_runtime
+from tvm.relay.expr_functor import ExprMutator
+from tvm.relay.expr import GlobalVar
 
 # import cvtools package
 cnn_utils_path = subprocess.check_output(['tv2', '-basepath', 'CnnUtils'])
@@ -58,12 +47,16 @@ if tv2_p not in sys.path:
 else:
     raise Exception('%s not found' % tv2_p)
 
+# cvflow imports
 import cvflowbackend
 from cvflowbackend.ir_utils import ir_helper
 from cvflowbackend.prepare_stage import schema
+
 from frameworklibs.onnx import onnx_graph_utils as OnnxGraphUtils
 
+
 class VarReplacer(ExprMutator):
+
     def __init__(self, var_map):
         ExprMutator.__init__(self)
         self.var_map = var_map
@@ -73,14 +66,14 @@ class VarReplacer(ExprMutator):
             return self.var_map[var]
         return super().visit_var(var)
 
+
 def get_first_subgraph(mod):
     temp_strmod = mod['main'].__str__()
     callindex = temp_strmod.find('@cv22')
     callendindex = temp_strmod.find('(', callindex)
-    
     name = temp_strmod[callindex+1:callendindex]
-    
     return name
+
     
 def PruneSubgraphs(mod, prune_first=False):
     """
@@ -137,10 +130,7 @@ def PruneSubgraphs(mod, prune_first=False):
         subgraphs_names_to_remove = {x[0] for x in subgraphs_with_macs}
         print(type(subgraphs_names_to_remove))
         subgraph_to_keep = subgraphs_names_to_remove.remove(first_subgraph)
-
-        print('check first')
         print(subgraphs_names_to_remove)
-        print('check nonremove')
         print(subgraph_to_keep)
     else:
         subgraphs_with_macs = sorted(subgraphs_with_macs, key=lambda x: int(x[1]))
@@ -151,7 +141,8 @@ def PruneSubgraphs(mod, prune_first=False):
     new_mod = tvm.IRModule(mod.functions, mod.type_definitions)
     new_mod["main"] = SubgraphRemover(subgraphs_names_to_remove, mod, new_mod).visit(mod["main"])
     return new_mod
-    
+
+
 '''
 def PruneSubgraphsWithMoreThanOneInput(mod, compiler="cv22"):
     subgraph_names_to_remove = []
@@ -168,6 +159,7 @@ def PruneSubgraphsWithMoreThanOneInput(mod, compiler="cv22"):
     new_mod["main"] = SubgraphRemover(subgraph_names_to_remove, mod, new_mod).visit(mod["main"])
     return new_mod
 '''
+
 
 def PartitionsToModules(mod, compiler):
         module_dict = {}
@@ -190,6 +182,7 @@ def PartitionsToModules(mod, compiler):
                         
         return module_dict
 
+
 def PartitionOneToModule(mod, compiler):
     module_dict = {}
     
@@ -205,6 +198,7 @@ def PartitionOneToModule(mod, compiler):
         
     return module_dict
 
+
 class tags(Enum):
     SHAPE  = 'shape'
     FPATH  = 'filepath'
@@ -214,20 +208,20 @@ class tags(Enum):
     CFMT   = 'colorformat'
     MEAN   = 'mean'
     SCALE  = 'scale'
+    SDK    = 'sdk'
 
 
 def set_env_variable(key, value):
     os.environ[key] = value
 
 
-def run_command(cmd):
-    """Run command, return output as string."""
-    import subprocess
-    output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
-    return output.decode("ascii")
+def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config, sdk):
 
 
-def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config):
+    def run_command(cmd):
+        """Run command, return output as string."""
+        output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
+        return output.decode("ascii")
 
 
     def create_metablock(name, block_type, inputs, outputs, attrs={}):
@@ -513,6 +507,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
 
     def import_graph_surgery():
+
         gs_path = run_command('tv2 -basepath frameworklibs').strip()
         sys.path.append(join(gs_path, 'lib/python3.7/site-packages/frameworklibs/onnx/'))
 
@@ -552,7 +547,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
                 transform_str += i
                 transform_str += ','
 
-            transform_str +=')'
+            transform_str += ')'
 
             from onnx_transform import OnnxGraphTransform
             gs = OnnxGraphTransform(model=model_proto)
@@ -578,6 +573,92 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         model_proto, input_preproc_mapping = rename_input_tensors(model_proto, input_config)
 
         return model_proto, input_preproc_mapping
+
+
+    def gen_cavalry_bin(vas_outf, output_folder, output_name):
+
+        cavalry_bin_fname = join(output_folder, output_name+'.amba')
+        cavalry_cmd = 'cavalry_gen -d ' + vas_outf + ' -f ' + cavalry_bin_fname
+        os.system(cavalry_cmd)
+
+        # check if bin was generated
+        if not isfile(cavalry_bin_fname):
+            raise ValueError('Cavalry bin (%s) not generated' % cavalry_bin_fname)
+
+
+    def get_flexi_bin(cnngen_outf, outf, out_name, inputs, outputs, dummy_input_file, fwbase, diag_dir):
+
+        # SUPERDAG GEN
+
+        ## import superdag_gen
+        tv2_p = subprocess.check_output(['tv2', '-basepath', 'gentask'])
+        tv2_p = tv2_p.decode().rstrip('\n')
+        if isdir(tv2_p):
+            if tv2_p not in sys.path:
+                sys.path.append(tv2_p)
+        else:
+            raise Exception('%s not found' % tv2_p)
+
+        from superdag_gen import main as sdag_gen_entry_pt
+
+        ## superdag gen args
+        args = {}
+        args['--name'] = out_name
+        args['--cvtask'] = out_name
+        args['--inputs'] = [i+'='+dummy_input_file for i in inputs]
+        args['--outputs'] = [o+'='+o+'.out' for o in outputs]
+        args['--vasdir'] = cnngen_outf
+        args['--fwbase'] = fwbase
+        args['--handle_opdirs'] = 'overwrite'
+        args['--rundir'] = join(outf, out_name + '_flexidag')
+        args['--codeonly'] = True
+        args['--board'] = True
+        args['--inputmode'] = 5
+        args['--os'] = 1
+        args['--yield'] = 'on'
+
+        cmd = []
+        for k,v in args.items():
+            if isinstance(v, list):
+                for vv in v:
+                    cmd.extend([k,vv])
+
+            elif isinstance(v, bool):
+                if v:
+                    cmd.append(k)
+
+            else: # str
+                cmd.extend([k,str(v)])
+
+        ## run superdag_gen.py
+        print('\nSuperdag gen args: %s' % cmd)
+        sdag_gen_entry_pt(cmd)
+
+        # REMOTECONFIG
+
+        ## remember cwd
+        cwd = os.getcwd()
+
+        ## change to diag dir
+        os.chdir(diag_dir)
+
+        ## call remoteconfig
+        cmd_str = 'remoteconfig ' + join(fwbase, 'tests', out_name+'_ag')
+        print('\nRemoteconfig cmd line: %s' % cmd_str)
+        os.system(cmd_str)
+
+        # BUILD
+        os.system('make build')
+
+        ## check if bin was generated
+        flexi_bin_fname = join(diag_dir, 'flexidag0', 'flexibin0.bin')
+        if not isfile(flexi_bin_fname):
+            raise ValueError('Flexi bin (%s) not generated' % flexi_bin_fname)
+
+        ## restore cwd
+        os.chdir(cwd)
+
+        return flexi_bin_fname
 
 
     ###############################################################################################
@@ -633,32 +714,47 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         log_dir=join(output_folder, 'logs')
     )
 
-    # generate cavalry bin
-
     # roundabout way - convert fast checkpoint to checkpoint
     # this generates vas artifacts which can be used to generate 
-    # cavalry bin
-    cavalry_outf = join(output_folder, 'cavalry')
+    # cavalry bin / flexidag
+    cvflowb_outf = join(output_folder, 'convert')
     ckpt_ambapb = cvflowbackend.convert(
         ckpt_ambapb.SerializeToString(),
         metagraph_type='checkpoint',
         output_name=output_name,
-        output_folder=cavalry_outf
+        output_folder=cvflowb_outf
     )
 
     save_path = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
 
-    vas_out_dir = join(cavalry_outf, 'ambacnn_out', output_name, 'vas_output')
-    if not isdir(vas_out_dir):
-        raise ValueError('Vas output folder (%s) not found' % vas_out_dir)
+    cnngen_outf = join(cvflowb_outf, 'ambacnn_out', output_name)
+    vas_outf = join(cnngen_outf, 'vas_output')
+    if not isdir(vas_outf):
+        raise ValueError('Vas output folder (%s) not found' % vas_outf)
 
-    cavalry_bin_fname = join(output_folder, output_name+'.amba')
-    cavalry_cmd = 'cavalry_gen -d ' + vas_out_dir + ' -f ' + cavalry_bin_fname
-    os.system(cavalry_cmd)
+    # generate cavalry bin
+    if sdk == 'linux':
+        gen_cavalry_bin(vas_outf, output_folder, output_name)
 
-    # check if bin was generated
-    if not isfile(cavalry_bin_fname):
-        raise ValueError('Cavalry bin (%s) not generated' % cavalry_bin_fname)
+    # generate flexibin
+    else: # sdk == 'ambalink'
+        dummy_input_file = '/home/ambalink/bin/bin/superdag_input'
+        fwbase = '/home/ambalink/cv'
+        diag_dir = '/home/diag/'
+
+        flexibin = get_flexi_bin(
+            cnngen_outf,
+            output_folder,
+            output_name,
+            list(input_preproc_mapping.values()),
+            list(primary_outputs.keys()),
+            dummy_input_file,
+            fwbase,
+            diag_dir
+        )
+
+        # copy it right location (expected by test_cv22.py)
+        copy(flexibin, join(output_folder, output_name + '.amba'))
 
     return save_path
 
@@ -698,7 +794,6 @@ class CVFlowTVMWrapper():
 
         def relayvm_build(self, mod, params, opt_level=3):
             with tvm.transform.PassContext(opt_level=opt_level, disabled_pass=["FoldScaleAxis", "AlterOpLayout"]):
-                #mod = relay.transform.InferType()(mod)
                 vm_exec = relay.vm.compile(mod, target="llvm -device=arm_cpu -mtriple=aarch64-linux-gnu", params=params)
                 #vm_exec = relay.vm.compile(mod, target="llvm", params=params)
                 self._json, self._lib = vm_exec.save()
@@ -807,8 +902,6 @@ class CVFlowTVMWrapper():
                 return rt_outs
 
         def init_logger(self, debuglevel):
-
-            import subprocess
             libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
             libpath = libpath.decode().rstrip('\n')
             tv2_p = join(libpath, 'parser/common/')
