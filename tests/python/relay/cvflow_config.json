@@ -1,0 +1,14 @@
+{
+	"general": {
+		"work_dir": "/tmp/test_amba",
+		"amba_files_folder_name": "amba_files",
+		"prebuilt_bin_list": "libamba_tvm.so.0, libamba_tvm.so.0.0.1, libtvm_runtime.so, libdlr.so",
+		"ann_compiler_name": "cv22"
+	},
+
+	"ambalink": {
+		"firmware_base": "/home/ambalink/cv",
+		"diag_base_dir": "/home/diag",
+		"sdag_input_file": "/home/ambalink/bin/bin/def_in"
+	}
+}

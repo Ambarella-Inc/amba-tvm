@@ -29,6 +29,7 @@ import time
 import numpy as np
 import subprocess
 import argparse
+from enum import Enum
 logging.basicConfig(level=logging.DEBUG)
 
 # tvm imports
@@ -53,6 +54,22 @@ from tvm.contrib.target.onnx import to_onnx
 # cvflow imports
 from frameworklibs.common import json_schema
 
+class cvflow_cfg_keys(Enum):
+    GENERAL   = 'general'
+    WORKDIR   = 'work_dir'
+    AMBADIR   = 'amba_files_folder_name'
+    PRB_BINS  = 'prebuilt_bin_list'
+    COMPILER  = 'ann_compiler_name'
+
+    AMBALINK  = 'ambalink'
+    FWBASE    = 'firmware_base'
+    DIAG_BASE = 'diag_base_dir'
+    DIAGDIR   = 'diag_dir'
+    SDAG_IN   = 'sdag_input_file'
+
+# short-hand for convenience
+CFG = cvflow_cfg_keys
+
 def run_command(cmd):
     """Run command, return output as string."""
     output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
@@ -60,35 +77,41 @@ def run_command(cmd):
 
 class CV22_TVM_Compilation():
 
-    def __init__(self, model_directory, output_directory, prebuilt_bins_path, metadata_file, tar_output, debuglevel=2):
+    def __init__(self, model_directory, output_directory, config_json, prebuilt_bins_path, metadata_file, tar_output, debuglevel=2):
         """
         model_directory: Directory containing model file (usually /compiler/)
         output_directory: Directory to output finished artifacts
+        config_json: JSON config file containing hard coded paths and names
         prebuilt_bins_path: Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so
         metadata_file: Path to default metadata file
+        tar_output: Boolen flag to indicate whether outputs needs to be saved as tar gz
         debuglevel: Debug level (default: 2))
         """
         self.dir = model_directory
         self.output_dir = output_directory
 
-        self.amba_folder = 'amba_files/'
+        self.json_config = self._read_json_(config_json)
+
+        self.amba_folder = self.json_config[CFG.GENERAL.value][CFG.AMBADIR.value]
         self.amba_files_dir = join(self.output_dir, self.amba_folder)
         if not isdir(self.amba_files_dir):
             makedirs(self.amba_files_dir)
 
         self.prebuilt_bins_path = prebuilt_bins_path
-        self.prebuilt_bins = ['libamba_tvm.so.0', 'libamba_tvm.so.0.0.1', 'libtvm_runtime.so', 'libdlr.so']
+        self.prebuilt_bins = self.json_config[CFG.GENERAL.value][CFG.PRB_BINS.value].split(",")
         self.prebuilt_bins_fpath = []
 
         # to store ambapb artefacts etc
-        self.tmpdir = '/tmp/test_amba/'
-        self._remove_tmp_dir_()
+        self.workdir = self.json_config[CFG.GENERAL.value][CFG.WORKDIR.value]
+        self._remove_dir_(self.workdir)
 
         self.rand_id = binascii.b2a_hex(urandom(4)).decode("utf-8")
         self.out_bname = 'compiled_' + self.rand_id
 
         self.ambapb_fpaths = []
-        self.cavalry_bin_fpaths = []
+
+        # both cavalry and flexibin
+        self.sdk_bin_fpaths = []
 
         self.output_files = []
         self.amba_files = []
@@ -105,7 +128,7 @@ class CV22_TVM_Compilation():
         self.model = self._validate_input_files_()
 
         # read metadata to dict
-        self.metadata = self._init_metadata_(metadata_file)
+        self.metadata = self._read_json_(metadata_file)
 
         # save output to tar file?
         self.tar_output = tar_output
@@ -146,15 +169,15 @@ class CV22_TVM_Compilation():
         model_file = self._get_model_file_()
 
         for f in self.prebuilt_bins:
-            fpath = join(self.prebuilt_bins_path, f)
+            fpath = join(self.prebuilt_bins_path, f.strip())
             self._check_for_file_(fpath)
             self.prebuilt_bins_fpath.append(fpath)
 
         return model_file
 
-    def _init_metadata_(self, metadata_file):
-        self._check_for_file_(metadata_file)
-        with open(metadata_file) as f:
+    def _read_json_(self, json_fname):
+        self._check_for_file_(json_fname)
+        with open(json_fname) as f:
             return json.load(f)
 
     def _get_model_file_(self):
@@ -188,8 +211,8 @@ class CV22_TVM_Compilation():
             err = '%s not found' % fname
             self._error_(err)
 
-    def _remove_tmp_dir_(self):
-        rmtree(self.tmpdir, ignore_errors=True)
+    def _remove_dir_(self, fpath, ignore_errors=True):
+        rmtree(fpath, ignore_errors)
 
     def _list_from_str_(self, in_str, dtype):
         out_list = []
@@ -350,7 +373,7 @@ class CV22_TVM_Compilation():
         Create DRA list text file
         Convert model to relay
         """
-        model_path = join(self.tmpdir, 'model')
+        model_path = join(self.workdir, 'model')
         rmtree(model_path, ignore_errors=True)
         makedirs(model_path)
 
@@ -458,6 +481,24 @@ class CV22_TVM_Compilation():
         # default: linux
         sdk = config_data.get(T.SDK.value, 'linux')
 
+        if sdk == 'ambalink':
+            # check if firmware base exists
+            self._check_for_file_(self.json_config[CFG.AMBALINK.value][CFG.FWBASE.value])
+
+            # create diag dir
+            diag_dir = self.json_config[CFG.AMBALINK.value][CFG.DIAG_BASE.value]
+            rmtree(diag_dir, ignore_errors=True)
+            makedirs(diag_dir)
+
+            # create input file for superdag_gen
+            if not exists(self.json_config[CFG.AMBALINK.value][CFG.SDAG_IN.value]):
+                from pathlib import Path
+                #open(self.json_config[CFG.AMBALINK.value][CFG.SDAG_IN.value], 'a').close()
+                Path(self.json_config[CFG.AMBALINK.value][CFG.SDAG_IN.value]).touch()
+
+        else:
+            self.json_config[CFG.AMBALINK.value] = {}
+
         # create a txt file for DRA
 
         input_shape = {}
@@ -481,8 +522,8 @@ class CV22_TVM_Compilation():
 
             # look for file with extn .bin in calib_fpath
             # if extn is not .bin, convert them to binary
-            dra_fname = join(self.tmpdir, mangled_name+'_dra_list.txt')
-            dra_count = self._dra_files_(self.tmpdir, dra_fname, calib_fpath, input_config[name][T.SHAPE.value], \
+            dra_fname = join(self.workdir, mangled_name+'_dra_list.txt')
+            dra_count = self._dra_files_(self.workdir, dra_fname, calib_fpath, input_config[name][T.SHAPE.value], \
                                          input_config[name][T.CFMT.value], input_config[name][T.DTYPE.value])
             if dra_count == 0:
                 self._error_('No dra files found in %s' % calib_fpath)
@@ -552,14 +593,14 @@ class CV22_TVM_Compilation():
         return mod, params, aux_files, metadata 
 
     def _cv22_compilation_(self):
-        json_fname, lib_fname, params_fname = self._compile_model_(self.module, self.params, 'cv22', self.input_config, self.out_bname)
+        json_fname, lib_fname, params_fname = self._compile_model_(self.module, self.params, self.json_config[CFG.GENERAL.value][CFG.COMPILER.value], self.input_config, self.out_bname)
 
         self.output_files = [json_fname, lib_fname]
         if params_fname is not None:
             self.output_files.append(params_fname)
 
         self.output_files.extend(self.ambapb_fpaths)
-        self.output_files.extend(self.cavalry_bin_fpaths)
+        self.output_files.extend(self.sdk_bin_fpaths)
 
     def _compile_model_(self, mod, params, compiler, input_config, output_basename):
         """
@@ -622,32 +663,37 @@ class CV22_TVM_Compilation():
                 self._error_('Unknown return type %s' % type(mod['main'].ret_type))
             self._update_metadata_outputs_(out_list)
 
-            output_folder = join(self.tmpdir, 'prepare')
+            output_folder = join(self.workdir, 'prepare')
             makedirs(output_folder)
 
             for name, module in module_list.items():
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
                 mod_name = name + '_' + self.rand_id
-                onnx_model = to_onnx(module, {}, mod_name, path='cv22_model.onnx')
+                onnx_model = to_onnx(module, {}, mod_name, path=mod_name+'.onnx')
+
+                # create diag dir for this subgraph
+                if self.sdk == 'ambalink':
+                    diag_dir = join(self.json_config[CFG.AMBALINK.value][CFG.DIAG_BASE.value], name)
+                    makedirs(diag_dir)
+                    self.json_config[CFG.AMBALINK.value][CFG.DIAGDIR.value] = diag_dir
 
                 self.logger.info("---------- Invoking Cvflow Compilation ----------")
-                save_path = CvflowCompilation(model_proto=onnx_model, \
-                                              output_name=mod_name, \
-                                              output_folder=output_folder, \
-                                              metadata=self.metadata['Model'], \
-                                              input_config=input_config, \
-                                              sdk=self.sdk)
-                self.logger.info('Saved compiled model to: %s\n' % save_path)
+                ambapb_fpath, sdk_bin_fpath = CvflowCompilation(
+                        model_proto=onnx_model,
+                        output_name=mod_name,
+                        output_folder=output_folder,
+                        metadata=self.metadata['Model'],
+                        input_config=input_config,
+                        sdk=self.sdk,
+                        ambalink_cfg=self.json_config[CFG.AMBALINK.value])
+                self.logger.info('Saved ambapb to: %s\n' % ambapb_fpath)
+                self.logger.info('Saved compiled model to: %s\n' % sdk_bin_fpath)
 
-                ambapb_fname = mod_name + '.ambapb.ckpt.onnx'
-                ambapb_fpath = join(self.tmpdir, output_folder, ambapb_fname)
                 self._check_for_file_(ambapb_fpath)
                 self.ambapb_fpaths.append(ambapb_fpath)
 
-                cavalry_bin_fname = mod_name + '.amba'
-                cavalry_bin_fpath = join(self.tmpdir, output_folder, cavalry_bin_fname)
-                self._check_for_file_(cavalry_bin_fpath)
-                self.cavalry_bin_fpaths.append(cavalry_bin_fpath)
+                self._check_for_file_(sdk_bin_fpath)
+                self.sdk_bin_fpaths.append(sdk_bin_fpath)
             
             # set env variable CV22_COMPILED_BNAMES - to be used by codegen and runtime
             set_env_variable('CV22_RAND_ID', self.rand_id)
@@ -687,7 +733,7 @@ class CV22_TVM_Compilation():
         self.metadata['Model']['Outputs'] = outputs.copy()
 
     def _save_output_to_dir_(self):
-        metadata_file = join(self.tmpdir, self.out_bname + '.meta')
+        metadata_file = join(self.workdir, self.out_bname + '.meta')
         self._save_dict_to_json_file_(metadata_file, self.metadata)
 
         self.output_files.extend([metadata_file])
@@ -767,7 +813,7 @@ def makerun(args):
         makedirs(args.output_dir)
 
     try:
-        c = CV22_TVM_Compilation(args.model_dir, args.output_dir, args.prebuilt_binaries, args.metadata_path, args.tar_output, debuglevel=args.verbosity)
+        c = CV22_TVM_Compilation(args.model_dir, args.output_dir, args.config, args.prebuilt_bins_path, args.metadata_path, args.tar_output, args.verbosity)
         out_fname = c.process()
 
         print('CV22 compilation successful!')
@@ -798,13 +844,17 @@ def main(args):
                         metavar='Directory containing output files',
                         help='Directory to contain output files')
 
-    parser.add_argument('-p', '--prebuilt_binaries', type=str, required=False, default='/home/dlr/prebuild/amba/lib/',
+    parser.add_argument('-p', '--prebuilt_bins_path', type=str, required=False, default='/home/dlr/prebuild/amba/lib/',
                         metavar='Folder containing pre-built binaries necessary for tvm / dlr compilation and runtime',
                         help='Folder containing the following pre-built binaries: libtvm_runtime.so, libdlr.so, libamba_tvm.so.*')
 
     parser.add_argument('-m', '--metadata_path', type=str, required=False, default='/home/amba_tvm_release/metadata/default_metadata.json',
                         metavar='Default metadata file path',
                         help='Path to default metadata file')
+
+    parser.add_argument('-c', '--config', type=str, required=False, default='/home/tvm/tests/python/relay/cvflow_config.json',
+                        metavar='Cvflow compilation specific config containing hard coded paths and names',
+                        help='Cvflow compilation specific config containing hard coded paths and names')
 
     parser.add_argument('-v', '--verbosity', type=int, required=False, default=2,
                         metavar='Debug level 0 - 5',

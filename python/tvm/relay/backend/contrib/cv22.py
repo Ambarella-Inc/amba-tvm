@@ -215,7 +215,7 @@ def set_env_variable(key, value):
     os.environ[key] = value
 
 
-def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config, sdk):
+def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config, sdk, ambalink_cfg={}):
 
 
     def run_command(cmd):
@@ -575,9 +575,8 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         return model_proto, input_preproc_mapping
 
 
-    def gen_cavalry_bin(vas_outf, output_folder, output_name):
+    def gen_cavalry_bin(vas_outf, cavalry_bin_fname):
 
-        cavalry_bin_fname = join(output_folder, output_name+'.amba')
         cavalry_cmd = 'cavalry_gen -d ' + vas_outf + ' -f ' + cavalry_bin_fname
         os.system(cavalry_cmd)
 
@@ -725,22 +724,24 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         output_folder=cvflowb_outf
     )
 
-    save_path = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
+    ambapb_fpath = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
 
     cnngen_outf = join(cvflowb_outf, 'ambacnn_out', output_name)
     vas_outf = join(cnngen_outf, 'vas_output')
     if not isdir(vas_outf):
         raise ValueError('Vas output folder (%s) not found' % vas_outf)
 
+    sdk_bin_fpath = join(output_folder, output_name+'.amba')
+
     # generate cavalry bin
     if sdk == 'linux':
-        gen_cavalry_bin(vas_outf, output_folder, output_name)
+        gen_cavalry_bin(vas_outf, sdk_bin_fpath)
 
     # generate flexibin
     else: # sdk == 'ambalink'
-        dummy_input_file = '/home/ambalink/bin/bin/superdag_input'
-        fwbase = '/home/ambalink/cv'
-        diag_dir = '/home/diag/'
+        dummy_input_file = ambalink_cfg['sdag_input_file']
+        fwbase = ambalink_cfg['firmware_base']
+        diag_dir = ambalink_cfg['diag_dir']
 
         flexibin = get_flexi_bin(
             cnngen_outf,
@@ -754,9 +755,9 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         )
 
         # copy it right location (expected by test_cv22.py)
-        copy(flexibin, join(output_folder, output_name + '.amba'))
+        copy(flexibin, sdk_bin_fpath)
 
-    return save_path
+    return ambapb_fpath, sdk_bin_fpath
 
 
 def GetCvflowExecutionMode():
