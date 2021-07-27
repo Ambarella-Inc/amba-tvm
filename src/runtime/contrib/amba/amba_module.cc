@@ -53,7 +53,7 @@ namespace runtime {
  */
 
 typedef struct {
-  uint32_t engine_id_;
+  unsigned long engine_id_;
   std::string engine_name_;
   std::vector<std::pair<std::string, DLTensor*> > engine_in_;
   std::vector<std::pair<std::string, DLTensor*> > engine_out_;
