@@ -165,14 +165,14 @@ class CV22_TVM_Compilation():
     def _running_on_service_(self):
         return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ
 
-    def _validate_input_files_(self):
-        model_file = self._get_model_file_()
-
+    def _list_prebuilt_bins_(self):
         for f in self.prebuilt_bins:
             fpath = join(self.prebuilt_bins_path, f.strip())
             self._check_for_file_(fpath)
             self.prebuilt_bins_fpath.append(fpath)
 
+    def _validate_input_files_(self):
+        model_file = self._get_model_file_()
         return model_file
 
     def _read_json_(self, json_fname):
@@ -496,8 +496,13 @@ class CV22_TVM_Compilation():
                 #open(self.json_config[CFG.AMBALINK.value][CFG.SDAG_IN.value], 'a').close()
                 Path(self.json_config[CFG.AMBALINK.value][CFG.SDAG_IN.value]).touch()
 
+            self.prebuilt_bins_path = join(self.prebuilt_bins_path, 'ambalink')
+
         else:
             self.json_config[CFG.AMBALINK.value] = {}
+
+        # collect prebuilt bins
+        self._list_prebuilt_bins_()
 
         # create a txt file for DRA
 
