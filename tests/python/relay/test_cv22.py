@@ -500,6 +500,7 @@ class CV22_TVM_Compilation():
 
         else:
             self.json_config[CFG.AMBALINK.value] = {}
+            self.prebuilt_bins_path = join(self.prebuilt_bins_path, 'linux')
 
         # collect prebuilt bins
         self._list_prebuilt_bins_()
