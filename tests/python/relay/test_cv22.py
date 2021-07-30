@@ -786,23 +786,30 @@ class CV22_TVM_Compilation():
                 amba_list.append(i)
         logging.info("{}".format(amba_list))
 
-        self._consolidate_files_(flat_list, amba_list)
+        all_files = self._consolidate_files_(flat_list, amba_list)
 
         if self.tar_output:
-            self._compress_(out_fname, flat_list, amba_list)
+            self._compress_(out_fname, all_files)
 
     def _consolidate_files_(self, flat_list, amba_list):
+        all_files = []
         for item in flat_list:
             copy(item, self.output_dir)
+            all_files.append(join(self.output_dir, basename(item)))
+
         for item in amba_list:
             copy(item, self.amba_files_dir)
 
-    def _compress_(self, tar_fname, flist, alist):
+        # copy amba_files dir
+        # doing it this way to preserve hierarchy when tarring
+        all_files.append(self.amba_files_dir)
+
+        return all_files
+
+    def _compress_(self, tar_fname, flist):
         with tarfile.open(tar_fname, 'w:gz') as tar:
             for item in flist:
                 tar.add(item, arcname=basename(item))
-            for item in alist:
-                tar.add(item, arcname=join(self.amba_folder, basename(item)))
 
 def write_status(log, status):
     with open(log, 'w') as f:
