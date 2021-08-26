@@ -549,6 +549,14 @@ class CV22_TVM_Compilation():
             if T.SCALE.value in items:
                 input_config[name][T.SCALE.value] = self._list_from_str_(items[T.SCALE.value], float)
 
+        # check for cnngen_flags
+        # default: ''
+        self.cnngen_flags = config_data.get(T.CNNGEN_FLAGS.value, '')
+
+        # check for vas_flags
+        # default: '-v'
+        self.vas_flags = config_data.get(T.VAS_FLAGS.value, '-v')
+
         self.sdk = sdk
         self.input_config = input_config
 
@@ -691,6 +699,8 @@ class CV22_TVM_Compilation():
                         metadata=self.metadata['Model'],
                         input_config=input_config,
                         sdk=self.sdk,
+                        cnngen_flags=self.cnngen_flags,
+                        vas_flags=self.vas_flags,
                         ambalink_cfg=self.json_config[CFG.AMBALINK.value])
                 self.logger.info('Saved ambapb to: %s\n' % ambapb_fpath)
                 self.logger.info('Saved compiled model to: %s\n' % sdk_bin_fpath)
