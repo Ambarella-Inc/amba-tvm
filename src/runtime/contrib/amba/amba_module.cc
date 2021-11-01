@@ -67,8 +67,8 @@ class AmbaModule : public runtime::ModuleNode {
   explicit AmbaModule(
     const std::unordered_map<std::string, subgraph_attr_t>& amba_subgraphs)
     : amba_subgraphs_(amba_subgraphs) {
-    CHECK(GetAmbaTVMLibVersion() >= 0x1)
-      << "AmbaTVM library version should not be less than " << 0x1;
+    CHECK(GetAmbaTVMLibVersion() >= 0x2)
+      << "AmbaTVM library version should not be less than " << 0x2;
     // general init
     InitAmbaTVM();
   }
