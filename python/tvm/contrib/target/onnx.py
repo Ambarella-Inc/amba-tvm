@@ -138,15 +138,32 @@ class Conv(OpConverter):
         }
 
 
+class ConvTranspose(OpConverter):
+    """Operator converter for ConvTranspose."""
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {
+            "group": attrs.get_int("groups"),
+            "pads": attrs.get_int_tuple("padding"),
+            "strides": attrs.get_int_tuple("strides"),
+            "dilations": attrs.get_int_tuple("dilation"),
+            "kernel_shape": attrs.get_int_tuple("kernel_size"),
+            "output_padding": attrs.get_int_tuple("output_padding"),
+        }
+
+
 class MaxPool(OpConverter):
     """Operator converter for MaxPool."""
 
     @classmethod
     def convert_attributes(cls, attrs):
+
         return {
             "pads": attrs.get_int_tuple("padding"),
             "strides": attrs.get_int_tuple("strides"),
             "kernel_shape": attrs.get_int_tuple("pool_size"),
+            "ceil_mode": 1 if attrs.ceil_mode else 0,
         }
 
 
@@ -317,7 +334,40 @@ class ReduceMean(OpConverter):
         )
         model_container.add_nodes([node])
 
+class ReduceMin(OpConverter):
+    """Operator converter for Min."""
 
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {
+            "axes": attrs.axis,
+            "keepdims": 0 if bool(attrs.get_int("keepdims", 0)) is False else 1,
+        }
+
+    @classmethod
+    def convert(cls, node_entry, model_container, node_dict):
+        input_node = node_dict[node_entry["inputs"][0]]
+        assert len(input_node) == 1, "input node can not be a Tuple"
+        input_node = input_node[0]
+        shape = input_node["types"][0].shape
+        axis = node_entry["relay_node"].attrs.axis
+        axis = list(range(shape.size())) if not axis else tvm_array_to_list(axis)
+        exclude = 0 if not bool(node_entry["relay_node"].attrs.exclude) else 1
+        keepdims = 0 if not bool(node_entry["relay_node"].attrs.keepdims) else 1
+        if exclude:
+            all_axis = list(range(len(shape)))
+            axis = set(all_axis) - set(axis)
+
+        node = onnx.helper.make_node(
+            cls.__name__,
+            node_entry["input_names"],
+            node_entry["output_names"],
+            axes=axis,
+            keepdims=keepdims,
+        )
+        model_container.add_nodes([node])
+
+        
 class Pad(OpConverter):
     """Operator converter for Pad."""
 
@@ -617,9 +667,101 @@ class ConstantOfShapeOnes(ConstantOfShapeZeros):
         return {"value": 1}
 
 
+class LRN(OpConverter):
+    """ Operator converter for LRN.
+    """
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {
+            'alpha': attrs.alpha,
+            'beta': attrs.beta,
+            'bias': attrs.bias,
+            'size': attrs.size
+            #axis?
+        }
+
+class Resize(OpConverter):
+    """Operator converter for Resize."""
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        method = attrs.get_str("method")
+        if method == "nearest_neighbor":
+            mode = b"nearest"
+        elif method == "bilinear":
+            mode = b"linear"
+        elif method == "bicubic":
+            mode = b"cubic"
+        else:
+            raise Exception("Unknown method %s in Resize" % method)
+
+        coord_trans = attrs.get_str("coordinate_transformation_mode")
+        if coord_trans == "half_pixel":
+            coord_trans = b"half_pixel"
+        elif coord_trans == "align_corners":
+            coord_trans = b"align_corners"
+        elif coord_trans == "asymmetric":
+            coord_trans = b"asymmetric"
+        else:
+            raise Exception("Unknown coordinate_transformation_mode %s in Resize" % coord_trans)
+
+        # (TBD) assumed int tuple, have to add support when size is an expr
+        size = attrs.get_int_tuple("size")
+
+        return {
+            "mode": mode,
+            "coord_trans": coord_trans,
+            "size": size
+        }
+
+    @classmethod
+    def convert(cls, node_entry, model_container, node_dict):
+        attrs = cls.convert_attributes(node_entry["relay_node"].attrs)
+
+        name = node_entry["name"]
+        input_node = node_dict[node_entry["inputs"][0]]
+        assert len(input_node) == 1, "input node can not be a Tuple"
+        input_node = input_node[0]
+        input_shape = input_node["types"][0].shape
+
+        # (TBD) needed in opset 11
+        roi = [0]*len(input_shape) + [1]*len(input_shape)
+        roi_array = numpy.asarray(roi).astype(numpy.float64)
+        roi_node = add_input(roi_array, name, "roi", model_container)
+
+        out_size = attrs["size"]
+
+        # (onnx) rank of scale / size must match rank of X
+        # relay size node contains only spatial dimensions
+        # pad with 1s to match rank
+        match_rank_pad = len(input_shape) - len(out_size)
+        out_size_full_rank = input_shape[:match_rank_pad] + list(out_size)
+        out_size_array = numpy.asarray(out_size_full_rank).astype(numpy.int64)
+
+        scale_array = numpy.divide(out_size_array, numpy.asarray(input_shape).astype(numpy.int64)).astype(numpy.float32)
+        scale_node = add_input(scale_array, name, "scales", model_container)
+
+        input_names = [node_entry["input_names"][0], roi_node, scale_node]
+
+        resize_node = onnx.helper.make_node(cls.__name__, input_names, node_entry["output_names"], mode=attrs["mode"], coordinate_transformation_mode=attrs["coord_trans"])
+        model_container.add_nodes([resize_node])
+
+class Cast(OpConverter):
+    """ Operator converter for Cast.
+    """
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        from onnx import TensorProto
+        return {
+            'to': getattr(TensorProto, attrs.dtype.upper())
+        }
+
 relay_to_onnx_op_mapping = {
     "reshape": Reshape,
     "nn.conv2d": Conv,
+    "nn.conv2d_transpose": ConvTranspose,
     "add": rename("Add"),
     "nn.relu": rename("Relu"),
     "transpose": Transpose,
@@ -631,6 +773,7 @@ relay_to_onnx_op_mapping = {
     "nn.batch_norm": BatchNormalization,
     "nn.global_avg_pool2d": rename("GlobalAveragePool"),
     "concatenate": Concat,
+    "copy": rename("Identity"),
     "nn.dropout": Dropout,
     "nn.avg_pool2d": AveragePool,
     "divide": rename("Div"),
@@ -650,6 +793,12 @@ relay_to_onnx_op_mapping = {
     "layout_transform": LayoutTransform,
     "clip": Clip,
     "expand_dims": Expand,
+    "nn.lrn": LRN,
+    "image.resize": Resize,
+    "min": ReduceMin,
+    "sigmoid": rename("Sigmoid"),
+    "cast": Cast,
+    "round": rename("Round"),
 }
 
 

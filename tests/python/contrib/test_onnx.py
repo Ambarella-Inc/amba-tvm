@@ -89,7 +89,7 @@ def test_bias_add():
         bshape = (2,)
         rtol = 1e-2 if dtype == "float16" else 1e-5
         x = relay.var("x", shape=xshape, dtype=dtype)
-        bias = relay.var("bias", dtype=dtype)
+        bias = relay.var("bias", shape=bshape, dtype=dtype)
         z = relay.nn.bias_add(x, bias)
         func = relay.Function([x, bias], z)
 
@@ -514,6 +514,116 @@ def test_expand_dims():
     verify_expand_dims((1, 1001), 0, 2)
     verify_expand_dims((1, 1, 1001), 2, 2)
 
+def test_resize():
+    def verify_resize(dshape, outsize, method, coord_trans_mode, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.image.resize(x, size=outsize, method=method, coordinate_transformation_mode=coord_trans_mode)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_resize", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640)]
+    osize = [(240,320), (960,1280)]
+    #method = ['nearest_neighbor', 'bilinear', 'bicubic']
+    method = ['nearest_neighbor', 'bilinear']
+    coord_trans_mode = ['half_pixel', 'align_corners', 'asymmetric']
+
+    for i in isize:
+        for o in osize:
+            for m in method:
+                for c in coord_trans_mode:
+                    if (m=='nearest_neighbor' and c in ['half_pixel', 'align_corners']):
+                        continue
+                    verify_resize(i, o, m, c)
+                    #print('Passed resize test case: (%s %s, %s, %s)' % (i, o, m, c))
+
+def test_sigmoid():
+    def verify_sigmoid(dshape, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.sigmoid(x)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_sigmoid", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_sigmoid(i)
+
+def test_convtranspose():
+    def verify_convtranspose(dshape, dtype="float32"):
+        wshape = (dshape[1],8,5,5)
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        w = relay.var("w", relay.ty.TensorType(wshape, dtype))
+        y = relay.nn.conv2d_transpose(x, w, strides=(1,1), padding=(2,2,2,2), dilation=(1,1), groups=1, kernel_size=wshape[2:])
+        func = relay.Function([x, w], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        w_data = np.random.uniform(size=wshape).astype(dtype)
+        verify_results(func, [x_data, w_data], "test_convtranspose", rtol=1e-4, atol=1e-4)
+
+    # (TBD) add tests for dilation, strides etc.
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_convtranspose(i)
+
+def test_conv():
+    def verify_conv(dshape, dtype="float32"):
+        wshape = (8,dshape[1],5,5)
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        w = relay.var("w", relay.ty.TensorType(wshape, dtype))
+        y = relay.nn.conv2d(x, w, strides=(1,1), padding=(2,2,2,2), dilation=(1,1), groups=1, kernel_size=wshape[2:])
+        func = relay.Function([x, w], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        w_data = np.random.uniform(size=wshape).astype(dtype)
+        verify_results(func, [x_data, w_data], "test_conv", rtol=1e-4, atol=1e-4)
+
+    # (TBD) add tests for dilation, strides etc.
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_conv(i)
+
+def test_copy():
+    def verify_copy(dshape, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.copy(x)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_sigmoid", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_copy(i)
+
+def test_cast():
+    def verify_cast(dshape, dtype):
+        x = relay.var("x", relay.ty.TensorType(dshape, "float32"))
+        y = relay.cast(x, dtype)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype("float32")
+        verify_results(func, [x_data], "test_round", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640), (1,3,224,224)]
+    out_dtypes = ['int8', 'int16', 'uint8', 'uint16']
+
+    for i in isize:
+        for d in out_dtypes:
+            verify_cast(i, d)
+
+def test_round():
+    def verify_round(dshape, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.round(x)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_round", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640), (1,3,224,224)]
+
+    for i in isize:
+        verify_round(i)
 
 if __name__ == "__main__":
     test_add()
@@ -538,3 +648,10 @@ if __name__ == "__main__":
     test_layout_transform()
     test_clip()
     test_expand_dims()
+    #test_resize()
+    test_sigmoid()
+    test_convtranspose()
+    test_conv()
+    test_copy()
+    test_cast()
+    test_round()
