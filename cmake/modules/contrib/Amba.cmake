@@ -31,11 +31,14 @@ if(USE_AMBA_RUNTIME)
 
     if(NOT USE_AMBA_TOOLCHAIN)
       find_library(AMBA_LIB_DIR famba_tvm HINTS ${AMBA_ROOT_DIR} PATH_SUFFIXES lib)
-      if (EXISTS ${AMBA_LIB_DIR})
-        list(APPEND TVM_RUNTIME_LINKER_LIBS ${AMBA_LIB_DIR})
-      else (AMBA_LIB_DIR)
-        message(ERROR " Could not find Ambarella lib files.")
-      endif()
+    else (USE_AMBA_TOOLCHAIN)
+      find_library(AMBA_LIB_DIR amba_tvm HINTS ${AMBA_ROOT_DIR} PATH_SUFFIXES lib/linux)
+    endif()
+
+    if (EXISTS ${AMBA_LIB_DIR})
+      list(APPEND TVM_RUNTIME_LINKER_LIBS ${AMBA_LIB_DIR})
+    else (AMBA_LIB_DIR)
+      message(ERROR " Could not find Ambarella lib files.")
     endif()
 
     file(GLOB AMBA_CONTRIB_SRC src/runtime/contrib/amba/amba_module.cc
@@ -47,5 +50,6 @@ endif()
 if (USE_AMBA_TOOLCHAIN)
     set(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++ CACHE FILEPATH "CXX compiler." FORCE)
     set(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc CACHE FILEPATH "C compiler." FORCE)
+    set(MACHINE_NAME "aarch64-linux-gnu")
 endif()
 
