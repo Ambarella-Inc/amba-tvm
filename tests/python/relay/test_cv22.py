@@ -87,6 +87,8 @@ class CV22_TVM_Compilation():
         tar_output: Boolen flag to indicate whether outputs needs to be saved as tar gz
         debuglevel: Debug level (default: 2))
         """
+        self.logger = self._init_logger_(debuglevel)
+
         self.dir = model_directory
         self.output_dir = output_directory
 
@@ -115,8 +117,6 @@ class CV22_TVM_Compilation():
 
         self.output_files = []
         self.amba_files = []
-
-        self.logger = self._init_logger_(debuglevel)
 
         # check if compilation is running on service or locally
         self.neo_service = self._running_on_service_()
