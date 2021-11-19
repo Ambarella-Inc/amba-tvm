@@ -669,7 +669,7 @@ class CV22_TVM_Compilation():
                 self._error_('Unknown return type %s' % type(mod['main'].ret_type))
             self._update_metadata_outputs_(out_list)
 
-            output_folder = join(self.workdir, 'prepare')
+            output_folder = join(self.workdir, 'cvflow')
             makedirs(output_folder)
 
             for name, module in module_list.items():

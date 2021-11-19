@@ -24,6 +24,7 @@ import numpy as np
 from enum import Enum
 from queue import Queue
 from shutil import copy
+from onnx import save as onnx_save
 
 # tvm imports
 import tvm
@@ -665,6 +666,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     # run graph surgery transforms like FlattenIO, RenameTensors
     model_proto, input_preproc_mapping = run_graph_surgery(model_proto, input_config)
+    onnx_save(model_proto, join(output_folder, output_name+'_modified.onnx'))
 
     # get graph info
     model_summary, gs_recs, _ = OnnxGraphUtils.determine_graph_info(model_proto, None)
@@ -703,13 +705,14 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     schema.dump_json(graph_desc, join(output_folder, output_name+'_splits.json'))
     print('Saved splits json: %s' % join(output_folder, output_name+'_splits.json'))
 
+    prepare_outf = join(output_folder, 'prepare')
     ckpt_ambapb = cvflowbackend.prepare(
         model=model_proto.SerializeToString(),
         graph_desc=graph_desc,
         framework='onnx',
         metagraph_type='fast_checkpoint',
         output_name=output_name,
-        output_folder=output_folder,
+        output_folder=prepare_outf,
         log_dir=join(output_folder, 'logs')
     )
 
@@ -726,7 +729,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     ambapb_fpath = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
 
-    cnngen_outf = join(cvflowb_outf, 'ambacnn_out', output_name)
+    cnngen_outf = join(cvflowb_outf, 'cnngen_out', output_name)
     vas_outf = join(cnngen_outf, 'vas_output')
     if not isdir(vas_outf):
         raise ValueError('Vas output folder (%s) not found' % vas_outf)
