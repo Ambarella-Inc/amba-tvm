@@ -878,7 +878,7 @@ class CVFlowTVMWrapper():
                         lib    = self._lib
                         params = self._params
 
-                        rt_mod = tvm.contrib.graph_runtime.create(json, lib, ctx=tvm.cpu())
+                        rt_mod = tvm.contrib.graph_executor.create(json, lib, tvm.cpu())
                         rt_mod.set_input(**params)
 
                         cnt = 0
