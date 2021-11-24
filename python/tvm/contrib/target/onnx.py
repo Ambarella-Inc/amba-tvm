@@ -23,7 +23,7 @@ import copy
 import numpy
 import onnx
 import onnx.utils
-from onnx import numpy_helper, OperatorSetIdProto, defs
+from onnx import numpy_helper, OperatorSetIdProto, defs, TensorProto
 import tvm
 from tvm import relay
 import tvm._ffi
@@ -396,10 +396,28 @@ class Pad(OpConverter):
         name = node_entry["name"]
         pad_data = attrs["pads"].astype(numpy.int64)
 
+        # get input dtype
+        input_node = node_dict[node_entry["inputs"][0]][0]
+        input_dtype = input_node["types"][0].dtype
+
+        # convert to TensorProto enum defn
+        if input_dtype == 'float32':
+            T = 'FLOAT'
+        else:
+            raise NotImplementedError(
+                "Only input dtype float32 is currently supported"
+            )
+
+        const_val_cast_name = "inter{}".format(node_entry["name"])
+        cast_node = onnx.helper.make_node(
+            Cast.__name__, [node_entry["input_names"][1]], [const_val_cast_name], to=getattr(TensorProto, T),
+        )
+        model_container.add_nodes([cast_node])
+
         input_names = [
             node_entry["input_names"][0],
             add_input(pad_data, name, "pads", model_container),
-            #node_entry["input_names"][1],
+            const_val_cast_name
         ]
 
         node = onnx.helper.make_node(
@@ -757,7 +775,6 @@ class Cast(OpConverter):
 
     @classmethod
     def convert_attributes(cls, attrs):
-        from onnx import TensorProto
         return {
             'to': getattr(TensorProto, attrs.dtype.upper())
         }
