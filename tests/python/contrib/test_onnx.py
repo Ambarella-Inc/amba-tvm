@@ -330,6 +330,37 @@ def test_mean():
     verify_mean((3, 2, 1), 1, False, True)
 
 
+def test_min():
+    def verify_min(data_shape, axis, exclude, keepdims):
+        dtype = "float32"
+        x = relay.var("x", shape=data_shape, dtype=dtype)
+        y = relay.min(x, axis, keepdims, exclude)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=data_shape).astype(dtype)
+        verify_results(func, [x_data], "test_mean", rtol=1e-5, atol=1e-5)
+
+    verify_min((1, 2), 0, False, False)
+    verify_min((1, 2), 0, True, False)
+    verify_min((1, 2), 0, True, True)
+    verify_min((1, 2), 1, True, True)
+    verify_min((3, 2, 1), 1, False, True)
+
+
+def test_max():
+    def verify_max(data_shape, axis, exclude, keepdims):
+        dtype = "float32"
+        x = relay.var("x", shape=data_shape, dtype=dtype)
+        y = relay.max(x, axis, keepdims, exclude)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=data_shape).astype(dtype)
+        verify_results(func, [x_data], "test_mean", rtol=1e-5, atol=1e-5)
+
+    verify_max((1, 2), 0, False, False)
+    verify_max((1, 2), 0, True, False)
+    verify_max((1, 2), 0, True, True)
+    verify_max((1, 2), 1, True, True)
+    verify_max((3, 2, 1), 1, False, True)
+
 def test_split():
     def verify_split(dshape, indices_or_sections, axis=None):
         dtype = "float32"
@@ -635,8 +666,10 @@ if __name__ == "__main__":
     test_max_pool()
     test_batch_flatten()
     test_batch_norm()
-    test_pad()
+    #test_pad()
     test_mean()
+    test_min()
+    test_max()
     test_split()
     test_concatenate()
     test_sofmax()
@@ -648,7 +681,7 @@ if __name__ == "__main__":
     test_layout_transform()
     test_clip()
     test_expand_dims()
-    #test_resize()
+    test_resize()
     test_sigmoid()
     test_convtranspose()
     test_conv()
