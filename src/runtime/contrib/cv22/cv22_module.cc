@@ -104,7 +104,11 @@ class CV22Module : public runtime::ModuleNode {
       // Run ades
       cmd += " --output_folder /tmp/test_amba/eval/outputs --log_dir /tmp/test_amba/eval/logs";
       LOG(INFO) << "Cmd: " << cmd;
-      system(cmd.c_str());
+      int ret = system(cmd.c_str());
+      if (ret == -1) {
+          LOG(ERROR) << "evaluate.py failed!";
+          exit(-1);
+      }
 
       // Read outputs from file
       std::vector<std::string>& outputs = cv22_subgraphs_[name].outputs;
@@ -112,7 +116,19 @@ class CV22Module : public runtime::ModuleNode {
       for (size_t o = 0; o < outputs.size(); ++o, ++out_idx) {
           LOG(INFO) << "Output " << o << ": " << outputs[o];
 
-          std::string out_fname = "/tmp/test_amba/eval/outputs/" + outputs[o] + "_iter0.bin";
+          // mangle tensor name
+          std::string out_tname, pat, rep;
+          size_t start_pos;
+
+          out_tname = outputs[o];
+
+          // replace "." with "_dt_"
+          pat = std::string(".");
+          rep = std::string("_dt_");
+          start_pos = out_tname.find(pat);
+          out_tname.replace(start_pos, pat.length(), rep);
+
+          std::string out_fname = "/tmp/test_amba/eval/outputs/" + out_tname + "_iter0.bin";
           std::ifstream fin;
           fin.open(out_fname, std::ios::binary);
 
