@@ -172,7 +172,18 @@ class Transpose(OpConverter):
 
     @classmethod
     def convert_attributes(cls, attrs):
-        return {"perm": attrs.get_int_tuple("axes")} if attrs["axes"] else {}
+        axes = attrs.get_int_tuple("axes")
+        if axes is not None:
+            num_dims = len(axes)
+            axes_ = []
+            for x in axes:
+                # convert negative indices to positive (if any)
+                if x < 0:
+                    axes_.append(x + num_dims)
+                else:
+                    axes_.append(x)
+
+            return {"perm": axes_}
 
 
 class MatMul(OpConverter):
