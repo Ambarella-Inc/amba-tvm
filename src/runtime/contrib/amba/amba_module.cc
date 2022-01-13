@@ -67,8 +67,8 @@ class AmbaModule : public runtime::ModuleNode {
   explicit AmbaModule(
     const std::unordered_map<std::string, subgraph_attr_t>& amba_subgraphs)
     : amba_subgraphs_(amba_subgraphs) {
-    CHECK(GetAmbaTVMLibVersion() >= 0x2)
-      << "AmbaTVM library version should not be less than " << 0x2;
+    CHECK(GetAmbaTVMLibVersion() >= AmbaTVMVer_)
+      << "AmbaTVM library version should not be less than " << AmbaTVMVer_;
     // general init
     InitAmbaTVM();
   }
@@ -82,8 +82,8 @@ class AmbaModule : public runtime::ModuleNode {
       engine_cfgs.push_back(engine_cfg);
     }
     // deinit general mem and network mem
-    CHECK(GetAmbaTVMLibVersion() >= 0x1)
-      << "AmbaTVM library version should not be less than " << 0x1;
+    CHECK(GetAmbaTVMLibVersion() >= AmbaTVMVer_)
+      << "AmbaTVM library version should not be less than " << AmbaTVMVer_;
     DeleteAmbaTVM(engine_cfgs.data(), engine_cfgs.size());
   }
 
@@ -98,8 +98,8 @@ class AmbaModule : public runtime::ModuleNode {
 
     // Generate an external packed function
     return PackedFunc([this, name](tvm::TVMArgs args, tvm::TVMRetValue* rv) {
-      CHECK(GetAmbaTVMLibVersion() >= 0x1)
-        << "AmbaTVM library version should not be less than " << 0x1;
+      CHECK(GetAmbaTVMLibVersion() >= AmbaTVMVer_)
+        << "AmbaTVM library version should not be less than " << AmbaTVMVer_;
       RunAmbaCVFlow(name, args, rv);
       /*fprintf(stderr, "[ AmbaModule ] [ %s ] cvflow time: %d us\n",
         name.c_str(), (*rv).operator int());*/
@@ -141,6 +141,8 @@ class AmbaModule : public runtime::ModuleNode {
   std::unordered_map<std::string, subgraph_attr_t> amba_subgraphs_;
   // map func_name to Ambarella Engine
   std::unordered_map<std::string, AmbaEngineContext> amba_engine_cache_;
+  // version requirement of libamba_tvm.so
+  const int AmbaTVMVer_ = 0x2;
 
   std::vector<DLTensor*> ConvertArgs(tvm::TVMArgs args) {
     std::vector<DLTensor*> io_args(args.size(), nullptr);
