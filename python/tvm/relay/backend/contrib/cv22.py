@@ -32,21 +32,14 @@ from tvm import relay
 from tvm.relay.expr_functor import ExprMutator
 from tvm.relay.expr import GlobalVar
 
-# import cvtools package
-cnn_utils_path = subprocess.check_output(['tv2', '-basepath', 'CnnUtils'])
-cnn_utils_path = cnn_utils_path.decode().rstrip('\n')
-
-tv2_p = cnn_utils_path + '/packages/'
-if tv2_p not in sys.path:
-    sys.path.append(tv2_p)
+# import cvflowbackend package
+cvb_path = subprocess.check_output(['tv2', '-basepath', 'cvflowbackend'])
+cvb_path = cvb_path.decode().rstrip('\n')
+cvb_path = join(cvb_path, 'lib')
+if cvb_path not in sys.path:
+    sys.path.append(cvb_path)
 else:
-    raise Exception('%s not found' % tv2_p)
-
-tv2_p = cnn_utils_path + '/onnx/common'
-if tv2_p not in sys.path:
-    sys.path.append(tv2_p)
-else:
-    raise Exception('%s not found' % tv2_p)
+    raise Exception('%s not found' % cvb_path)
 
 # cvflow imports
 import cvflowbackend
@@ -398,8 +391,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
             outputs.append(create_metatensor(name=tensor_names_q.get(), dtype='float32'))
 
         attr_dict = {}
-        attr_dict['cnngen_flags'] = '' # '-c coeff-force-fx16,act-force-fx16'
-        attr_dict['vas_flags'] = '-v'
+        attr_dict['cnngen_flags'] = ''
 
         graph_surgery_transforms = []
         if gs_recs['MOD_NODE_NAMES']:
@@ -723,6 +715,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     ckpt_ambapb = cvflowbackend.convert(
         ckpt_ambapb.SerializeToString(),
         metagraph_type='checkpoint',
+        vas_flags='-auto',
         output_name=output_name,
         output_folder=cvflowb_outf
     )
