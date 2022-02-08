@@ -126,7 +126,9 @@ class CV22Module : public runtime::ModuleNode {
           pat = std::string(".");
           rep = std::string("_dt_");
           start_pos = out_tname.find(pat);
-          out_tname.replace(start_pos, pat.length(), rep);
+          if (start_pos != std::string::npos) {
+              out_tname.replace(start_pos, pat.length(), rep);
+          }
 
           std::string out_fname = "/tmp/test_amba/eval/outputs/" + out_tname + "_iter0.bin";
           std::ifstream fin;
