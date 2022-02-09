@@ -19,7 +19,7 @@
 
 import sys
 from os import makedirs, listdir, environ, urandom
-from os.path import exists, join, isdir, basename
+from os.path import exists, join, isdir, basename, normpath
 from shutil import copy, rmtree
 import binascii
 import json
@@ -164,6 +164,19 @@ class CV22_TVM_Compilation():
 
     def _running_on_service_(self):
         return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ
+
+    def _get_fingerprint_(self):
+        tvm_version = str(tvm.__version__)
+
+        libpath = subprocess.check_output(['tv2', '-basepath', 'vas'])
+        libpath = libpath.decode().rstrip('\n')
+        cvtools_version = basename(normpath(libpath))
+
+        fingerprint = "tvm_{}-cvtools_{}".format(tvm_version, cvtools_version)
+
+        self.logger.info('Fingerprint: %s' % fingerprint)
+
+        return fingerprint
 
     def _list_prebuilt_bins_(self):
         for f in self.prebuilt_bins:
@@ -739,10 +752,13 @@ class CV22_TVM_Compilation():
         self.metadata['Model']['Outputs'] = outputs.copy()
 
     def _save_output_to_dir_(self):
+        fp_file = join(self.workdir, 'FINGERPRINT')
+        self._save_fingerprint_to_file_(fp_file, self._get_fingerprint_())
+
         metadata_file = join(self.workdir, self.out_bname + '.meta')
         self._save_dict_to_json_file_(metadata_file, self.metadata)
 
-        self.output_files.extend([metadata_file])
+        self.output_files.extend([fp_file, metadata_file])
         self.amba_files.extend(self.prebuilt_bins_fpath)
         self.amba_files.extend([self.aux_files])
 
@@ -765,6 +781,10 @@ class CV22_TVM_Compilation():
     def _save_dict_to_json_file_(self, json_fname, data):
         with open(json_fname, 'w') as fp:
             json.dump(data, fp, indent=1)
+
+    def _save_fingerprint_to_file_(self, fname, data):
+        with open(fname, 'w') as fp:
+            fp.write(data)
 
     def _save_output_(self, out_fname):
         flist = [f for f in self.output_files if f is not None]
