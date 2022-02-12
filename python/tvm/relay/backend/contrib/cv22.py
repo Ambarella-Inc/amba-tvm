@@ -769,12 +769,14 @@ def GetCvflowExecutionMode():
 class CVFlowTVMWrapper():
 
         # mode: ['EMULATOR', 'TARGET']
-        def __init__(self, mode, logger=None):
+        # inf_engine: ['ades', 'ac_inf'] --> valid only in emulator mode
+        def __init__(self, mode, inf_engine='ades', logger=None):
 
                 if mode not in ['EMULATOR', 'TARGET']:
                         raise ValueError('[CVFlowTVMWrapper] error: unknown mode (%s). Supported values: [EMULATOR, TARGET]' % mode)
 
                 self._mode = mode
+                self._inf_engine = inf_engine
 
                 if logger is None:
                     self._logger = self.init_logger(debuglevel=1)
@@ -866,6 +868,10 @@ class CVFlowTVMWrapper():
         def tvm_runtime(self, inputs):
 
                 if self._mode == 'EMULATOR':
+                        # Set env var to 1 if inference engine is acinf
+                        # To be used by runtime code
+                        if self._inf_engine == 'acinf':
+                            set_env_variable('EMU_IE_ACINF', '1')
 
                         json   = self._json
                         lib    = self._lib

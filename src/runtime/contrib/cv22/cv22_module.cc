@@ -70,6 +70,12 @@ class CV22Module : public runtime::ModuleNode {
       LOG(INFO) << "Filename: " << ambapb_fpath;
       std::string cmd = "evaluate.py --metagraph " + ambapb_fpath;
 
+      // check for inference engine
+      std::string emulator_ie = this->getEnvVar("EMU_IE_ACINF");
+      if (!emulator_ie.empty()) {
+          cmd += " --evalmode acinference --fq";
+      }
+
       // Save inputs to file
       std::vector<std::string>& inputs = cv22_subgraphs_[name].inputs;
       for (size_t i = 0; i < inputs.size(); ++i) {
@@ -189,6 +195,15 @@ class CV22Module : public runtime::ModuleNode {
 
  private:
   std::unordered_map<std::string, subgraph_attr_t> cv22_subgraphs_;
+
+  std::string getEnvVar(std::string const& key) {
+    char * val = getenv( key.c_str() );
+
+    // clear variable
+    unsetenv(key.c_str());
+
+    return val == NULL ? std::string("") : std::string(val);
+  }
 
   /*! \brief Serialize this module to a string. To be used during codegen. */
   std::string SerializeAmbaModuleToString() {
