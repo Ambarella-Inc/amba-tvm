@@ -53,6 +53,7 @@ from tvm.contrib.target.onnx import to_onnx
 
 # cvflow imports
 from frameworklibs.common import json_schema
+from cvflowbackend import logging as cvb_logger
 
 class cvflow_cfg_keys(Enum):
     GENERAL   = 'general'
@@ -148,19 +149,7 @@ class CV22_TVM_Compilation():
         raise Exception(err)
 
     def _init_logger_(self, debuglevel):
-        libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
-        libpath = libpath.decode().rstrip('\n')
-        tv2_p = join(libpath, 'parser/common/')
-        if isdir(tv2_p):
-            if tv2_p not in sys.path:
-                sys.path.append(tv2_p)
-            else:
-                raise Exception('%s not found' % tv2_p)
-
-        from frameworklibs.common.logger import ModifiedABSLLogger
-        log = ModifiedABSLLogger(program_name="CV22_TVM", amba_verbosity_level=debuglevel)
-
-        return log
+        return cvb_logger.get_logger()
 
     def _running_on_service_(self):
         return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ

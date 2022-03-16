@@ -33,9 +33,8 @@ from tvm.relay.expr_functor import ExprMutator
 from tvm.relay.expr import GlobalVar
 
 # import cvflowbackend package
-cvb_path = subprocess.check_output(['tv2', '-basepath', 'cvflowbackend'])
+cvb_path = subprocess.check_output(['tv2', '-libpath', 'cvflowbackend'])
 cvb_path = cvb_path.decode().rstrip('\n')
-cvb_path = join(cvb_path, 'lib')
 if cvb_path not in sys.path:
     sys.path.append(cvb_path)
 else:
@@ -45,8 +44,10 @@ else:
 import cvflowbackend
 from cvflowbackend.ir_utils import ir_helper
 from cvflowbackend.prepare_stage import schema
+from cvflowbackend import logging
 
 from frameworklibs.onnx import onnx_graph_utils as OnnxGraphUtils
+from frameworklibs.onnx.onnx_transform import OnnxGraphTransform
 
 
 class VarReplacer(ExprMutator):
@@ -499,15 +500,9 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         return graph_desc
 
 
-    def import_graph_surgery():
-
-        gs_path = run_command('tv2 -basepath frameworklibs').strip()
-        sys.path.append(join(gs_path, 'lib/python3.7/site-packages/frameworklibs/onnx/'))
-
     # flatten i/o using graph surgery
     def flatten_io(in_model_proto):
 
-        from onnx_transform import OnnxGraphTransform
         gs = OnnxGraphTransform(model=in_model_proto)
         out_model_proto = gs.apply_transforms(transforms='FlattenIO')
 
@@ -542,7 +537,6 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
             transform_str += ')'
 
-            from onnx_transform import OnnxGraphTransform
             gs = OnnxGraphTransform(model=model_proto)
             model_proto = gs.apply_transforms(transforms=transform_str)
 
@@ -556,9 +550,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     def run_graph_surgery(model_proto, input_config):
 
-        import_graph_surgery()
-
-        # flatten i/o using graph surgery
+        # flatten i/o using onnx graph surgery
         model_proto = flatten_io(model_proto)
 
         # rename input tensors if there are any preproc operations
@@ -905,16 +897,4 @@ class CVFlowTVMWrapper():
                 return rt_outs
 
         def init_logger(self, debuglevel):
-            libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
-            libpath = libpath.decode().rstrip('\n')
-            tv2_p = join(libpath, 'parser/common/')
-            if isdir(tv2_p):
-                if tv2_p not in sys.path:
-                    sys.path.append(tv2_p)
-            else:
-                raise Exception('%s not found' % tv2_p)
-
-            from logger import ModifiedABSLLogger
-            log = ModifiedABSLLogger(program_name="CVFlowTVMWrapper", amba_verbosity_level=debuglevel)
-
-            return log
+            return logging.get_logger()
