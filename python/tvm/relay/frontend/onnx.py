@@ -2919,13 +2919,15 @@ class QLinearConv(OnnxOpConverter):
             if attr["auto_pad"] in ("SAME_UPPER", "SAME_LOWER"):
                 # Warning: Convolution does not yet support dynamic shapes,
                 # one will need to run dynamic_to_static on this model after import
+                zp = fold_constant(x_zero_point)
+                assert isinstance(zp, tvm.relay.Constant), "Zero point expected to be a constant"
                 data = autopad(
                     data,
                     attr.get("strides", [1] * (ndim - 2)),
                     attr["kernel_shape"],
                     attr.get("dilations", [1] * (ndim - 2)),
                     ndim,
-                    pad_value=x_zero_point.data,
+                    pad_value=zp.data,
                     mode=attr["auto_pad"],
                 )
             elif attr["auto_pad"] == "VALID":
@@ -3532,7 +3534,7 @@ class GraphProto:
         return outputs
 
 
-def from_onnx(model, shape=None, dtype="float32", opset=None, freeze_params=False):
+def from_onnx(model, shape=None, dtype="float32", opset=None, freeze_params=True):
     """Convert a ONNX model into an equivalent Relay Function.
 
     ONNX graphs are represented as Python Protobuf objects.
@@ -3601,4 +3603,8 @@ def from_onnx(model, shape=None, dtype="float32", opset=None, freeze_params=Fals
     # Use the graph proto as a scope so that ops can access other nodes if needed.
     with g:
         mod, params = g.from_onnx(graph, opset)
+
+    if freeze_params:
+        mod = tvm.relay.transform.DynamicToStatic()(mod)
+
     return mod, params
