@@ -867,6 +867,7 @@ relay_to_onnx_op_mapping = {
     "sigmoid": rename("Sigmoid"),
     "cast": Cast,
     "round": rename("Round"),
+    "power": rename("Pow"),
 }
 
 
