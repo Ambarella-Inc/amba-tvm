@@ -24,6 +24,7 @@ import numpy
 import onnx
 import onnx.utils
 from onnx import numpy_helper, OperatorSetIdProto, defs, TensorProto
+import numpy as np
 import tvm
 from tvm import relay
 import tvm._ffi
@@ -520,8 +521,30 @@ class Slice(OpConverter):
             "starts": attrs.get_int_tuple("begin"),
             "ends": attrs.get_int_tuple("end"),
             "steps": attrs.get_int_tuple("strides"),
+            "axes": attrs.get_int_tuple("axes") if attrs.axes else None,
             "slice_mode": attrs.get_str("slice_mode"),
         }
+
+    @classmethod
+    def _common(cls, starts, ends, steps, axes):
+        new_axes = []
+        new_starts = []
+        new_steps = []
+        new_ends = []
+        pop_index = 0
+        for i in range(max(axes) + 1):
+            if i in axes:
+                new_axes.append(i)
+                new_starts.append(starts[pop_index])
+                new_ends.append(ends[pop_index])
+                new_steps.append(steps[pop_index])
+                pop_index += 1
+            else:
+                new_axes.append(i)
+                new_starts.append(0)
+                new_ends.append(np.iinfo(np.int32).max)
+                new_steps.append(1)
+        return new_starts, new_ends, new_steps, new_axes
 
     @classmethod
     def convert(cls, node_entry, model_container, node_dict):
@@ -536,9 +559,15 @@ class Slice(OpConverter):
         starts = list(attrs["starts"])
         ends = list(attrs["ends"])
         steps = list(attrs["steps"])
-        starts += [0] * (len(shape) - len(starts))
-        ends += [shape[i] + 1 for i in range(len(ends), len(shape))]
-        axes = list(range(len(shape)))
+        axes = attrs["axes"]
+
+        if axes is None:
+            starts += [0] * (len(shape) - len(starts))
+            ends += [shape[i] for i in range(len(ends), len(shape))]
+            axes = list(range(len(shape)))
+        else:
+            assert len(starts) == len(ends) == len(steps) == len(axes), "when axes is specified, the length of begin, end, strides, and axes must be equal"
+            starts, ends, steps, axes = cls._common(starts, ends, steps, axes)
 
         if attrs["slice_mode"] == "size":
             ends = [
