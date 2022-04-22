@@ -282,6 +282,8 @@ class Partitioner : public MixedModeMutator {
                        [](const Expr& e) { return e->IsInstance<ConstantNode>(); });
   }
 
+  int temp_count = 0;
+
   /*!
    * \brief Create a call to the function that represents a region.
    * \note The customized optimization pipeline will be invoked as well to
@@ -312,7 +314,9 @@ class Partitioner : public MixedModeMutator {
     }
 
     std::string target = end_node->attrs.as<CompilerAttrs>()->compiler;
-    std::string name = target + "_" + region->GetName() + "_" + std::to_string(region->GetID());
+    std::string name = target + "_" + region->GetName() + "_" + std::to_string(region->GetID()) +
+                       "_" + std::to_string(temp_count);
+    temp_count = temp_count + 1;
 
     // Constant propagation
     if (!params_bind.empty()) {

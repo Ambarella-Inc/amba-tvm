@@ -204,6 +204,21 @@ set(USE_SORT ON)
 # Whether use MKL-DNN (DNNL) codegen
 set(USE_DNNL_CODEGEN OFF)
 
+# Whether use Ambarella (CV22) codegen
+set(USE_CV22_CODEGEN OFF)
+
+# Whether to build Ambarella target runtime module
+# Possible values:
+# - OFF: disable Ambarella target runtime
+# - /path/to/amba_release that contains include and lib dirs
+set(USE_AMBA_RUNTIME OFF)
+
+# Whether to build Ambarella target runtime with Amba-Toolchain
+# Possible values:
+# - OFF: use default gcc
+# - ON: use Amba-Toolchain
+set(USE_AMBA_TOOLCHAIN OFF)
+
 # Whether to use Arm Compute Library (ACL) codegen
 # We provide 2 separate flags since we cannot build the ACL runtime on x86.
 # This is useful for cases where you want to cross-compile a relay graph

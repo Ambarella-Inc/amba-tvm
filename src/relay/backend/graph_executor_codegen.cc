@@ -237,7 +237,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
           // functions so we pass this processing function which
           // allows us to process each function as we lower it.
           if (func->GetAttr<String>(attr::kCompiler).defined()) {
-            UpdateConstants(func, &params_);
+            //UpdateConstants(func, &params_);
           }
 
           // TODO(@areusch, @jroesch): We should refactor this to
