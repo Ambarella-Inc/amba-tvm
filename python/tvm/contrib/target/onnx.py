@@ -25,6 +25,7 @@ import onnx
 import onnx.utils
 from onnx import numpy_helper, OperatorSetIdProto, defs
 from onnx import TensorProto
+import numpy as np
 import tvm
 from tvm import relay
 import tvm._ffi
@@ -204,7 +205,18 @@ class Transpose(OpConverter):
 
     @classmethod
     def convert_attributes(cls, attrs):
-        return {"perm": attrs.get_int_tuple("axes")} if attrs["axes"] else {}
+        axes = attrs.get_int_tuple("axes")
+        if axes is not None:
+            num_dims = len(axes)
+            axes_ = []
+            for x in axes:
+                # convert negative indices to positive (if any)
+                if x < 0:
+                    axes_.append(x + num_dims)
+                else:
+                    axes_.append(x)
+
+            return {"perm": axes_}
 
 
 class MatMul(OpConverter):
@@ -366,6 +378,73 @@ class ReduceMean(OpConverter):
         )
         model_container.add_nodes([node])
 
+class ReduceMin(OpConverter):
+    """Operator converter for Min."""
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {
+            "axes": attrs.axis,
+            "keepdims": 0 if bool(attrs.get_int("keepdims", 0)) is False else 1,
+        }
+
+    @classmethod
+    def convert(cls, node_entry, model_container, node_dict):
+        input_node = node_dict[node_entry["inputs"][0]]
+        assert len(input_node) == 1, "input node can not be a Tuple"
+        input_node = input_node[0]
+        shape = input_node["types"][0].shape
+        axis = node_entry["relay_node"].attrs.axis
+        axis = list(range(shape.size())) if not axis else tvm_array_to_list(axis)
+        exclude = 0 if not bool(node_entry["relay_node"].attrs.exclude) else 1
+        keepdims = 0 if not bool(node_entry["relay_node"].attrs.keepdims) else 1
+        if exclude:
+            all_axis = list(range(len(shape)))
+            axis = set(all_axis) - set(axis)
+
+        node = onnx.helper.make_node(
+            cls.__name__,
+            node_entry["input_names"],
+            node_entry["output_names"],
+            axes=axis,
+            keepdims=keepdims,
+        )
+        model_container.add_nodes([node])
+
+
+class ReduceMax(OpConverter):
+    """Operator converter for Max."""
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {
+            "axes": attrs.axis,
+            "keepdims": 0 if bool(attrs.get_int("keepdims", 0)) is False else 1,
+        }
+
+    @classmethod
+    def convert(cls, node_entry, model_container, node_dict):
+        input_node = node_dict[node_entry["inputs"][0]]
+        assert len(input_node) == 1, "input node can not be a Tuple"
+        input_node = input_node[0]
+        shape = input_node["types"][0].shape
+        axis = node_entry["relay_node"].attrs.axis
+        axis = list(range(shape.size())) if not axis else tvm_array_to_list(axis)
+        exclude = 0 if not bool(node_entry["relay_node"].attrs.exclude) else 1
+        keepdims = 0 if not bool(node_entry["relay_node"].attrs.keepdims) else 1
+        if exclude:
+            all_axis = list(range(len(shape)))
+            axis = set(all_axis) - set(axis)
+
+        node = onnx.helper.make_node(
+            cls.__name__,
+            node_entry["input_names"],
+            node_entry["output_names"],
+            axes=axis,
+            keepdims=keepdims,
+        )
+        model_container.add_nodes([node])
+
 
 class Pad(OpConverter):
     """Operator converter for Pad."""
@@ -393,12 +472,30 @@ class Pad(OpConverter):
         attrs = cls.convert_attributes(node_entry["relay_node"].attrs)
 
         name = node_entry["name"]
-        pad_data = numpy.asarray(attrs["pads"], dtype=attrs["pads"][0].dtype).astype(numpy.int64)
+        pad_data = attrs["pads"].astype(numpy.int64)
+
+        # get input dtype
+        input_node = node_dict[node_entry["inputs"][0]][0]
+        input_dtype = input_node["types"][0].dtype
+
+        # convert to TensorProto enum defn
+        if input_dtype == 'float32':
+            T = 'FLOAT'
+        else:
+            raise NotImplementedError(
+                "Only input dtype float32 is currently supported"
+            )
+
+        const_val_cast_name = "inter{}".format(node_entry["name"])
+        cast_node = onnx.helper.make_node(
+            Cast.__name__, [node_entry["input_names"][1]], [const_val_cast_name], to=getattr(TensorProto, T),
+        )
+        model_container.add_nodes([cast_node])
 
         input_names = [
             node_entry["input_names"][0],
             add_input(pad_data, name, "pads", model_container),
-            node_entry["input_names"][1],
+            const_val_cast_name
         ]
 
         node = onnx.helper.make_node(
@@ -456,8 +553,30 @@ class Slice(OpConverter):
             "starts": attrs.get_int_tuple("begin"),
             "ends": attrs.get_int_tuple("end"),
             "steps": attrs.get_int_tuple("strides"),
+            "axes": attrs.get_int_tuple("axes") if attrs.axes else None,
             "slice_mode": attrs.get_str("slice_mode"),
         }
+
+    @classmethod
+    def _common(cls, starts, ends, steps, axes):
+        new_axes = []
+        new_starts = []
+        new_steps = []
+        new_ends = []
+        pop_index = 0
+        for i in range(max(axes) + 1):
+            if i in axes:
+                new_axes.append(i)
+                new_starts.append(starts[pop_index])
+                new_ends.append(ends[pop_index])
+                new_steps.append(steps[pop_index])
+                pop_index += 1
+            else:
+                new_axes.append(i)
+                new_starts.append(0)
+                new_ends.append(np.iinfo(np.int32).max)
+                new_steps.append(1)
+        return new_starts, new_ends, new_steps, new_axes
 
     @classmethod
     def convert(cls, node_entry, model_container, node_dict):
@@ -472,9 +591,15 @@ class Slice(OpConverter):
         starts = list(attrs["starts"])
         ends = list(attrs["ends"])
         steps = list(attrs["steps"])
-        starts += [0] * (len(shape) - len(starts))
-        ends += [shape[i] + 1 for i in range(len(ends), len(shape))]
-        axes = list(range(len(shape)))
+        axes = attrs["axes"]
+
+        if axes is None:
+            starts += [0] * (len(shape) - len(starts))
+            ends += [shape[i] for i in range(len(ends), len(shape))]
+            axes = list(range(len(shape)))
+        else:
+            assert len(starts) == len(ends) == len(steps) == len(axes), "when axes is specified, the length of begin, end, strides, and axes must be equal"
+            starts, ends, steps, axes = cls._common(starts, ends, steps, axes)
 
         if attrs["slice_mode"] == "size":
             ends = [
@@ -819,11 +944,14 @@ relay_to_onnx_op_mapping = {
     "clip": Clip,
     "expand_dims": Expand,
     "nn.lrn": LRN,
+    "min": ReduceMin,
+    "max": ReduceMax,
     "sigmoid": rename("Sigmoid"),
     "copy": rename("Identity"),
     "round": rename("Round"),
     "cast": Cast,
     "image.resize2d": Resize,
+    "power": rename("Pow"),
 }
 
 

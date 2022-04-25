@@ -328,13 +328,13 @@ def test_pad():
     """Pad unit test."""
 
     def verify_pad():
-        dshape = (4, 10, 7, 7)
-        x = relay.var("x", shape=dshape, dtype="int32")
-        y = relay.nn.pad(x, ((1, 1), (2, 2), (3, 3), (4, 4)))
-        func = relay.Function([x], y)
-        func = run_infer_type(func)
-        x_data = np.random.randint(low=-255, high=255, size=dshape).astype(np.int32)
-        verify_results(func, [x_data], "test_pad", rtol=1e-5, atol=1e-5)
+        for dtype in ["float16", "float32"]:
+            dshape = (4, 10, 7, 7)
+            x = relay.var("x", shape=dshape, dtype=dtype)
+            y = relay.nn.pad(x, ((1, 1), (2, 2), (3, 3), (4, 4)))
+            func = relay.Function([x], y)
+            x_data = np.random.uniform(size=dshape).astype(dtype)
+            verify_results(func, [x_data], "test_pad", rtol=1e-5, atol=1e-5)
 
     verify_pad()
 
@@ -387,6 +387,37 @@ def test_mean():
     verify_mean((3, 2, 1), 1, False, True)
 
 
+def test_min():
+    def verify_min(data_shape, axis, exclude, keepdims):
+        dtype = "float32"
+        x = relay.var("x", shape=data_shape, dtype=dtype)
+        y = relay.min(x, axis, keepdims, exclude)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=data_shape).astype(dtype)
+        verify_results(func, [x_data], "test_mean", rtol=1e-5, atol=1e-5)
+
+    verify_min((1, 2), 0, False, False)
+    verify_min((1, 2), 0, True, False)
+    verify_min((1, 2), 0, True, True)
+    verify_min((1, 2), 1, True, True)
+    verify_min((3, 2, 1), 1, False, True)
+
+
+def test_max():
+    def verify_max(data_shape, axis, exclude, keepdims):
+        dtype = "float32"
+        x = relay.var("x", shape=data_shape, dtype=dtype)
+        y = relay.max(x, axis, keepdims, exclude)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=data_shape).astype(dtype)
+        verify_results(func, [x_data], "test_mean", rtol=1e-5, atol=1e-5)
+
+    verify_max((1, 2), 0, False, False)
+    verify_max((1, 2), 0, True, False)
+    verify_max((1, 2), 0, True, True)
+    verify_max((1, 2), 1, True, True)
+    verify_max((3, 2, 1), 1, False, True)
+
 def test_split():
     def verify_split(dshape, indices_or_sections, axis=None):
         dtype = "float32"
@@ -423,37 +454,28 @@ def test_concatenate():
 
 
 def test_strided_slice():
-    def verify_strided_slice(dshape, begin, end, strides, mode):
+    def verify_strided_slice(dshape, begin, end, strides, axes, mode):
         x = relay.var("x", relay.TensorType(dshape, "float32"))
         if mode == "size":
             strides = None
-        z = relay.strided_slice(x, begin=begin, end=end, strides=strides, slice_mode=mode)
+            axes = None # (TBD)
+        z = relay.strided_slice(x, begin=begin, end=end, strides=strides, axes=axes, slice_mode=mode)
         func = relay.Function([x], z)
         x_data = np.random.uniform(size=dshape).astype("float32")
         verify_results(func, [x_data], "test_strided_slice", rtol=1e-5, atol=1e-5)
 
     for mode in ["end", "size"]:
-        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 2, 3], None, mode)
-        verify_strided_slice((3, 4, 3), [1, -1, 0], [4, -1, 3], [1, 2], mode)
-        verify_strided_slice(
-            (3, 4, 3),
-            [
-                1,
-            ],
-            [4, -3],
-            None,
-            mode,
-        )
-        verify_strided_slice((3, 4, 3), [0, 0, 0], [4, -5, 4], [1, -1, 2], mode)
-        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 4, -3], [2, 1, 1], mode)
-        verify_strided_slice((3, 4, 3), [1, -1, 0], [4, -5, 3], [2, -1, 1], mode)
-        verify_strided_slice((3, 4, 3), [1, 0, 0], [2, 2, 3], [1, 1, 2], mode)
-        verify_strided_slice((3, 4, 3), [1, -1, 0], [2, -3, 3], [1, -1, 1], mode)
-
-        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 1000, 3], None, mode)
-        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 4], None, mode)
-        verify_strided_slice((3, 4, 3), [1, 1], [4, 4, 3], None, mode)
-        verify_strided_slice((3, 4, 3), [1, 1], [4, 4, 3], [1, 1, 2], mode)
+        verify_strided_slice((3, 4, 3), [1, -1, 0], [4, -1, 3], [1, 2], None, mode)
+        verify_strided_slice((3, 4, 3), [1], [4, -3], None, None, mode)
+        verify_strided_slice((3, 4, 3), [0, 0, 0], [4, -5, 4], [1, -1, 2], [0, 1, 2], mode)
+        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 4, -3], [2, 1, 1], [0, 1, 2], mode)
+        verify_strided_slice((3, 4, 3), [1, -1, 0], [4, -5, 3], [2, -1, 1], None, mode)
+        verify_strided_slice((3, 4, 3), [1, 0, 0], [2, 2, 3], [1, 1, 2], None, mode)
+        verify_strided_slice((3, 4, 3), [1, -1, 0], [2, -3, 3], [1, -1, 1], [0, 1, 2], mode)
+        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 1000, 3], None, None, mode)
+        verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 4], None, None, mode)
+        verify_strided_slice((3, 4, 3), [1, 1], [4, 4, 3], None, None, mode)
+        verify_strided_slice((3, 4, 3), [1, 1], [4, 4, 3], [1, 1, 2], None, mode)
 
 
 def test_cmp_type():
@@ -571,6 +593,27 @@ def test_expand_dims():
     verify_expand_dims((1, 1001), 0, 2)
     verify_expand_dims((1, 1, 1001), 2, 2)
 
+def test_resize():
+    def verify_resize(dshape, outsize, method, coord_trans_mode, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(dshape, dtype))
+        y = relay.image.resize(x, size=outsize, method=method, coordinate_transformation_mode=coord_trans_mode)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=dshape).astype(dtype)
+        verify_results(func, [x_data], "test_resize", rtol=1e-4, atol=1e-4)
+
+    isize = [(1,3,480,640)]
+    osize = [(240,320), (960,1280)]
+    #method = ['nearest_neighbor', 'bilinear', 'bicubic']
+    method = ['nearest_neighbor', 'bilinear']
+    coord_trans_mode = ['half_pixel', 'align_corners', 'asymmetric']
+
+    for i in isize:
+        for o in osize:
+            for m in method:
+                for c in coord_trans_mode:
+                    if (m=='nearest_neighbor' and c in ['half_pixel', 'align_corners']):
+                        continue
+                    verify_resize(i, o, m, c)
 
 def test_lrn():
     """LRN unit test."""
@@ -733,6 +776,8 @@ if __name__ == "__main__":
     test_batch_norm()
     test_pad()
     test_mean()
+    test_min()
+    test_max()
     test_split()
     test_concatenate()
     test_sofmax()
@@ -744,9 +789,11 @@ if __name__ == "__main__":
     test_layout_transform()
     test_clip()
     test_expand_dims()
+    test_resize()
     test_lrn()
     test_sigmoid()
     test_copy()
+    test_cast()
     test_round()
     test_cast()
     test_resize()
