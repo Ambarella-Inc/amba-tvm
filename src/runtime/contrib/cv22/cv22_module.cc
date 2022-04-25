@@ -70,6 +70,12 @@ class CV22Module : public runtime::ModuleNode {
       LOG(INFO) << "Filename: " << ambapb_fpath;
       std::string cmd = "evaluate.py --metagraph " + ambapb_fpath;
 
+      // check for inference engine
+      std::string emulator_ie = this->getEnvVar("EMU_IE_ACINF");
+      if (!emulator_ie.empty()) {
+          cmd += " --evalmode acinference --fq";
+      }
+
       // Save inputs to file
       std::vector<std::string>& inputs = cv22_subgraphs_[name].inputs;
       for (size_t i = 0; i < inputs.size(); ++i) {
@@ -104,7 +110,11 @@ class CV22Module : public runtime::ModuleNode {
       // Run ades
       cmd += " --output_folder /tmp/test_amba/eval/outputs --log_dir /tmp/test_amba/eval/logs";
       LOG(INFO) << "Cmd: " << cmd;
-      system(cmd.c_str());
+      int ret = system(cmd.c_str());
+      if (ret == -1) {
+          LOG(ERROR) << "evaluate.py failed!";
+          exit(-1);
+      }
 
       // Read outputs from file
       std::vector<std::string>& outputs = cv22_subgraphs_[name].outputs;
@@ -112,7 +122,21 @@ class CV22Module : public runtime::ModuleNode {
       for (size_t o = 0; o < outputs.size(); ++o, ++out_idx) {
           LOG(INFO) << "Output " << o << ": " << outputs[o];
 
-          std::string out_fname = "/tmp/test_amba/eval/outputs/" + outputs[o] + "_iter0.bin";
+          // mangle tensor name
+          std::string out_tname, pat, rep;
+          size_t start_pos;
+
+          out_tname = outputs[o];
+
+          // replace "." with "_dt_"
+          pat = std::string(".");
+          rep = std::string("_dt_");
+          start_pos = out_tname.find(pat);
+          if (start_pos != std::string::npos) {
+              out_tname.replace(start_pos, pat.length(), rep);
+          }
+
+          std::string out_fname = "/tmp/test_amba/eval/outputs/" + out_tname + "_iter0.bin";
           std::ifstream fin;
           fin.open(out_fname, std::ios::binary);
 
@@ -171,6 +195,15 @@ class CV22Module : public runtime::ModuleNode {
 
  private:
   std::unordered_map<std::string, subgraph_attr_t> cv22_subgraphs_;
+
+  std::string getEnvVar(std::string const& key) {
+    char * val = getenv( key.c_str() );
+
+    // clear variable
+    unsetenv(key.c_str());
+
+    return val == NULL ? std::string("") : std::string(val);
+  }
 
   /*! \brief Serialize this module to a string. To be used during codegen. */
   std::string SerializeAmbaModuleToString() {

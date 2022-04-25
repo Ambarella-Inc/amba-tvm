@@ -24,6 +24,7 @@ import numpy as np
 from enum import Enum
 from queue import Queue
 from shutil import copy
+from onnx import save as onnx_save
 
 # tvm imports
 import tvm
@@ -31,28 +32,22 @@ from tvm import relay
 from tvm.relay.expr_functor import ExprMutator
 from tvm.relay.expr import GlobalVar
 
-# import cvtools package
-cnn_utils_path = subprocess.check_output(['tv2', '-basepath', 'CnnUtils'])
-cnn_utils_path = cnn_utils_path.decode().rstrip('\n')
-
-tv2_p = cnn_utils_path + '/packages/'
-if tv2_p not in sys.path:
-    sys.path.append(tv2_p)
+# import cvflowbackend package
+cvb_path = subprocess.check_output(['tv2', '-libpath', 'cvflowbackend'])
+cvb_path = cvb_path.decode().rstrip('\n')
+if cvb_path not in sys.path:
+    sys.path.append(cvb_path)
 else:
-    raise Exception('%s not found' % tv2_p)
-
-tv2_p = cnn_utils_path + '/onnx/common'
-if tv2_p not in sys.path:
-    sys.path.append(tv2_p)
-else:
-    raise Exception('%s not found' % tv2_p)
+    raise Exception('%s not found' % cvb_path)
 
 # cvflow imports
 import cvflowbackend
 from cvflowbackend.ir_utils import ir_helper
 from cvflowbackend.prepare_stage import schema
+from cvflowbackend import logging
 
 from frameworklibs.onnx import onnx_graph_utils as OnnxGraphUtils
+from frameworklibs.onnx.onnx_transform import OnnxGraphTransform
 
 
 class VarReplacer(ExprMutator):
@@ -397,8 +392,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
             outputs.append(create_metatensor(name=tensor_names_q.get(), dtype='float32'))
 
         attr_dict = {}
-        attr_dict['cnngen_flags'] = '' # '-c coeff-force-fx16,act-force-fx16'
-        attr_dict['vas_flags'] = '-v'
+        attr_dict['cnngen_flags'] = ''
 
         graph_surgery_transforms = []
         if gs_recs['MOD_NODE_NAMES']:
@@ -506,15 +500,9 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         return graph_desc
 
 
-    def import_graph_surgery():
-
-        gs_path = run_command('tv2 -basepath frameworklibs').strip()
-        sys.path.append(join(gs_path, 'lib/python3.7/site-packages/frameworklibs/onnx/'))
-
     # flatten i/o using graph surgery
     def flatten_io(in_model_proto):
 
-        from onnx_transform import OnnxGraphTransform
         gs = OnnxGraphTransform(model=in_model_proto)
         out_model_proto = gs.apply_transforms(transforms='FlattenIO')
 
@@ -549,7 +537,6 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
             transform_str += ')'
 
-            from onnx_transform import OnnxGraphTransform
             gs = OnnxGraphTransform(model=model_proto)
             model_proto = gs.apply_transforms(transforms=transform_str)
 
@@ -563,9 +550,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     def run_graph_surgery(model_proto, input_config):
 
-        import_graph_surgery()
-
-        # flatten i/o using graph surgery
+        # flatten i/o using onnx graph surgery
         model_proto = flatten_io(model_proto)
 
         # rename input tensors if there are any preproc operations
@@ -665,6 +650,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
     # run graph surgery transforms like FlattenIO, RenameTensors
     model_proto, input_preproc_mapping = run_graph_surgery(model_proto, input_config)
+    onnx_save(model_proto, join(output_folder, output_name+'_modified.onnx'))
 
     # get graph info
     model_summary, gs_recs, _ = OnnxGraphUtils.determine_graph_info(model_proto, None)
@@ -703,13 +689,14 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     schema.dump_json(graph_desc, join(output_folder, output_name+'_splits.json'))
     print('Saved splits json: %s' % join(output_folder, output_name+'_splits.json'))
 
+    prepare_outf = join(output_folder, 'prepare')
     ckpt_ambapb = cvflowbackend.prepare(
         model=model_proto.SerializeToString(),
         graph_desc=graph_desc,
         framework='onnx',
         metagraph_type='fast_checkpoint',
         output_name=output_name,
-        output_folder=output_folder,
+        output_folder=prepare_outf,
         log_dir=join(output_folder, 'logs')
     )
 
@@ -720,13 +707,14 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     ckpt_ambapb = cvflowbackend.convert(
         ckpt_ambapb.SerializeToString(),
         metagraph_type='checkpoint',
+        vas_flags='-auto',
         output_name=output_name,
         output_folder=cvflowb_outf
     )
 
     ambapb_fpath = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
 
-    cnngen_outf = join(cvflowb_outf, 'ambacnn_out', output_name)
+    cnngen_outf = join(cvflowb_outf, 'cnngen_out', output_name)
     vas_outf = join(cnngen_outf, 'vas_output')
     if not isdir(vas_outf):
         raise ValueError('Vas output folder (%s) not found' % vas_outf)
@@ -773,12 +761,14 @@ def GetCvflowExecutionMode():
 class CVFlowTVMWrapper():
 
         # mode: ['EMULATOR', 'TARGET']
-        def __init__(self, mode, logger=None):
+        # inf_engine: ['ades', 'ac_inf'] --> valid only in emulator mode
+        def __init__(self, mode, inf_engine='ades', logger=None):
 
                 if mode not in ['EMULATOR', 'TARGET']:
                         raise ValueError('[CVFlowTVMWrapper] error: unknown mode (%s). Supported values: [EMULATOR, TARGET]' % mode)
 
                 self._mode = mode
+                self._inf_engine = inf_engine
 
                 if logger is None:
                     self._logger = self.init_logger(debuglevel=1)
@@ -870,12 +860,16 @@ class CVFlowTVMWrapper():
         def tvm_runtime(self, inputs):
 
                 if self._mode == 'EMULATOR':
+                        # Set env var to 1 if inference engine is acinf
+                        # To be used by runtime code
+                        if self._inf_engine == 'acinf':
+                            set_env_variable('EMU_IE_ACINF', '1')
 
                         json   = self._json
                         lib    = self._lib
                         params = self._params
 
-                        rt_mod = tvm.contrib.graph_runtime.create(json, lib, ctx=tvm.cpu())
+                        rt_mod = tvm.contrib.graph_executor.create(json, lib, tvm.cpu())
                         rt_mod.set_input(**params)
 
                         cnt = 0
@@ -903,16 +897,4 @@ class CVFlowTVMWrapper():
                 return rt_outs
 
         def init_logger(self, debuglevel):
-            libpath = subprocess.check_output(['tv2', '-basepath', 'AmbaCnnUtils'])
-            libpath = libpath.decode().rstrip('\n')
-            tv2_p = join(libpath, 'parser/common/')
-            if isdir(tv2_p):
-                if tv2_p not in sys.path:
-                    sys.path.append(tv2_p)
-            else:
-                raise Exception('%s not found' % tv2_p)
-
-            from logger import ModifiedABSLLogger
-            log = ModifiedABSLLogger(program_name="CVFlowTVMWrapper", amba_verbosity_level=debuglevel)
-
-            return log
+            return logging.get_logger()
