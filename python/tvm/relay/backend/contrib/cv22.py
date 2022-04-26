@@ -64,7 +64,7 @@ class VarReplacer(ExprMutator):
 
 def get_first_subgraph(mod):
     temp_strmod = mod['main'].__str__()
-    callindex = temp_strmod.find('@cv22')
+    callindex = temp_strmod.find('@tvmgen_cvflow_cv22')
     callendindex = temp_strmod.find('(', callindex)
     name = temp_strmod[callindex+1:callendindex]
     return name
@@ -180,12 +180,8 @@ def PartitionsToModules(mod, compiler):
 
 def PartitionOneToModule(mod, compiler):
     module_dict = {}
-    
-    temp_strmod = mod['main'].__str__()
-    callindex = temp_strmod.find('@cv22')
-    callendindex = temp_strmod.find('(', callindex)
 
-    name = temp_strmod[callindex+1:callendindex]
+    name = get_first_subgraph(mod)
     tempmod = tvm.IRModule.from_expr(mod[name])
     new_mod = tvm.ir.module.IRModule()
     new_mod['main'] = tempmod[name]

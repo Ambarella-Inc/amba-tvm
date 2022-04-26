@@ -650,7 +650,7 @@ class CV22_TVM_Compilation():
             self.logger.debug(mod.astext(show_meta_data=False))
             
             self.logger.debug("---------- Partioned Graph ----------")
-            mod = transform.PartitionGraph()(mod)
+            mod = transform.PartitionGraph(mod_name='cvflow')(mod)
             self.logger.debug(mod.astext(show_meta_data=False))
             
             self.logger.debug("---------- Infer relay expression type ----------")
