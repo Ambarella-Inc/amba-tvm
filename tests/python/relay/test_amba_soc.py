@@ -136,7 +136,7 @@ class CV22_TVM_Compilation():
 
     def process(self):
         self._convert_to_relay_()
-        self._cv22_compilation_()
+        self._cvflow_compilation_()
         out_fname = self._save_output_to_dir_()
 
         return out_fname
@@ -600,7 +600,7 @@ class CV22_TVM_Compilation():
 
         return mod, params, aux_files, metadata 
 
-    def _cv22_compilation_(self):
+    def _cvflow_compilation_(self):
         json_fname, lib_fname, params_fname = self._compile_model_(self.module, self.params, self.json_config[CFG.GENERAL.value][CFG.COMPILER.value], self.input_config, self.out_bname)
 
         self.output_files = [json_fname, lib_fname]
@@ -838,7 +838,7 @@ def makerun(args):
         c = CV22_TVM_Compilation(args.model_dir, args.output_dir, args.config, args.prebuilt_bins_path, args.metadata_path, args.tar_output, args.verbosity)
         out_fname = c.process()
 
-        print('CV22 compilation successful!')
+        print('CVFlow compilation successful!')
 
     except Exception as e:
         # write appropriate error message
@@ -849,14 +849,14 @@ def makerun(args):
         # COMPILATION_FAILED
         write_status(err_file, err_str)
 
-        print('CV22 compilation failed!')
+        print('CVFlow compilation failed!')
 
 
 def main(args):
     model_input_dir = environ.get('SM_NEO_INPUT_MODEL_DIR', '/compiler/')
     model_output_dir = environ.get('SM_NEO_COMPILED_MODEL_DIR', '/compiler/')
 
-    parser = argparse.ArgumentParser(description='Script to run tvm compilation for cv22')
+    parser = argparse.ArgumentParser(description='Script to run tvm compilation for Amba SoC')
 
     parser.add_argument('-d', '--model_dir', type=str, required=False, default=model_input_dir,
                         metavar='Directory containing model file',
