@@ -220,6 +220,14 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
 
 
     def create_metatensor(name, shape=None, dtype=None, data=None, extn=None, init=None):
+
+        # ensure shape is int
+        if shape is not None:
+            if isinstance(shape, list):
+                shape = [int(sh) for sh in shape]
+            elif isinstance(shape, str):
+                shape = int(str)
+
         meta_tensor = schema.Tensor(
             name=name,
             shape=shape,
