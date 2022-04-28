@@ -686,7 +686,7 @@ class CV22_TVM_Compilation():
                     self.json_config[CFG.AMBALINK.value][CFG.DIAGDIR.value] = diag_dir
 
                 self.logger.info("---------- Invoking Cvflow Compilation ----------")
-                ambapb_fpath, sdk_bin_fpath = CvflowCompilation(
+                ambapb_fpath, sdk_bin_fpath, ret_status = CvflowCompilation(
                         model_proto=onnx_model,
                         output_name=mod_name,
                         output_folder=output_folder,
@@ -694,6 +694,10 @@ class CV22_TVM_Compilation():
                         input_config=input_config,
                         sdk=self.sdk,
                         ambalink_cfg=self.json_config[CFG.AMBALINK.value])
+
+                if not ret_status:
+                    self._error_("Compilation failed")
+
                 self.logger.info('Saved ambapb to: %s\n' % ambapb_fpath)
                 self.logger.info('Saved compiled model to: %s\n' % sdk_bin_fpath)
 

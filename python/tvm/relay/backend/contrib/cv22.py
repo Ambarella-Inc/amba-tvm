@@ -694,34 +694,49 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
     print('Saved splits json: %s' % join(output_folder, output_name+'_splits.json'))
 
     prepare_outf = join(output_folder, 'prepare')
-    ckpt_ambapb = cvflowbackend.prepare(
-        model=model_proto.SerializeToString(),
-        graph_desc=graph_desc,
-        framework='onnx',
-        metagraph_type='fast_checkpoint',
-        output_name=output_name,
-        output_folder=prepare_outf,
-        log_dir=join(output_folder, 'logs')
-    )
+
+    try:
+        ckpt_ambapb = cvflowbackend.prepare(
+            model=model_proto.SerializeToString(),
+            graph_desc=graph_desc,
+            framework='onnx',
+            metagraph_type='fast_checkpoint',
+            output_name=output_name,
+            output_folder=prepare_outf,
+            log_dir=join(output_folder, 'logs')
+        )
+
+    except Exception as e:
+        print("CVFlow compilation failed with the following error: %s" % str(e))
+        pass
+        return None, None, False
 
     # roundabout way - convert fast checkpoint to checkpoint
     # this generates vas artifacts which can be used to generate 
     # cavalry bin / flexidag
     cvflowb_outf = join(output_folder, 'convert')
-    ckpt_ambapb = cvflowbackend.convert(
-        ckpt_ambapb.SerializeToString(),
-        metagraph_type='checkpoint',
-        vas_flags='-auto',
-        output_name=output_name,
-        output_folder=cvflowb_outf
-    )
+
+    try:
+        ckpt_ambapb = cvflowbackend.convert(
+            ckpt_ambapb.SerializeToString(),
+            metagraph_type='checkpoint',
+            vas_flags='-auto',
+            output_name=output_name,
+            output_folder=cvflowb_outf
+        )
+
+    except Exception as e:
+        print("CVFlow compilation failed with the following error: %s" % str(e))
+        pass
+        return None, None, False
 
     ambapb_fpath = ir_helper.save_model(ckpt_ambapb, output_name, output_folder)
 
     cnngen_outf = join(cvflowb_outf, 'cnngen_out', output_name)
     vas_outf = join(cnngen_outf, 'vas_output')
     if not isdir(vas_outf):
-        raise ValueError('Vas output folder (%s) not found' % vas_outf)
+        print("CVFlow compilation failed with the following error: Vas output folder (%s) not found" % vas_outf)
+        return None, None, False
 
     sdk_bin_fpath = join(output_folder, output_name+'.amba')
 
@@ -749,7 +764,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         # copy it right location (expected by test_cv22.py)
         copy(flexibin, sdk_bin_fpath)
 
-    return ambapb_fpath, sdk_bin_fpath
+    return ambapb_fpath, sdk_bin_fpath, True
 
 
 def GetCvflowExecutionMode():
