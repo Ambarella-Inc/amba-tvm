@@ -675,6 +675,12 @@ class CV22_TVM_Compilation():
             makedirs(output_folder)
 
             for name, module in module_list.items():
+                # remove prefix tvmgen_cvflow_
+                # expected mod name: tvmgen_cvflow_XXX
+                _prefix = "tvmgen_cvflow_"
+                if name.startswith(_prefix):
+                    name = name[len(_prefix):]
+
                 self.logger.info("---------- Converting subgraph %s to onnx ----------" % name)
                 mod_name = name + '_' + self.rand_id
                 onnx_model = to_onnx(module, {}, mod_name, path=mod_name+'.onnx')

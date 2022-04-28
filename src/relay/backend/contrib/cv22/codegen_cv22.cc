@@ -76,7 +76,19 @@ class CV22ModuleCodegen : public CSourceModuleCodegenBase {
     else {
         LOG(INFO) << "Env variable CV22_RAND_ID set to " << cv22_rand_id << " by cvflow compiler";
     }
-    attr.filename = sid + "_" + cv22_rand_id;
+
+    // remove prefix "tvmgen_cvflow_"
+    // (TBD): pass this info instead of deriving it here
+    size_t st_pos;
+    std::string ambapb_bname, prfx;
+    prfx = std::string("tvmgen_cvflow_");
+    ambapb_bname = sid;
+    st_pos = ambapb_bname.find(prfx);
+    if (st_pos != std::string::npos) {
+        ambapb_bname.replace(st_pos, prfx.length(), std::string(""));
+    }
+
+    attr.filename = ambapb_bname + "_" + cv22_rand_id;
 
     // input list
     for (size_t i = 0; i < func->params.size(); ++i) {
