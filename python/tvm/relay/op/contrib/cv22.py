@@ -75,7 +75,7 @@ _register_external_op_helper("nn.contrib_conv2d_winograd_without_weight_transfor
 
 #_register_external_op_helper("nn.leaky_relu")
 _register_external_op_helper("nn.prelu")
-_register_external_op_helper("image.resize")
+_register_external_op_helper("image.resize2d")
 _register_external_op_helper("reshape")
 _register_external_op_helper("reshape_like")
 _register_external_op_helper("copy")

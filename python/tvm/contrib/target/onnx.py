@@ -847,7 +847,7 @@ class Resize(OpConverter):
             )
 
         rounding_method = attrs.get_str("rounding_method")
-        if rounding_method == "round":
+        if rounding_method == "" or rounding_method == "round":
             rounding_method = b"round_prefer_ceil"
         elif rounding_method == "floor":
             rounding_method = b"floor"
