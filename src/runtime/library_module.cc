@@ -75,6 +75,16 @@ PackedFunc WrapPackedFunc(TVMBackendPackedCFunc faddr, const ObjectPtr<Object>& 
   return PackedFunc([faddr, sptr_to_self](TVMArgs args, TVMRetValue* rv) {
     TVMValue ret_value;
     int ret_type_code = kTVMNullptr;
+    std::vector<DLTensor*> io_args(args.size(), nullptr);
+    for (int32_t i = 0; i < args.size(); ++i) {
+      if (args[i].type_code() == kTVMDLTensorHandle) {
+        io_args[i] = args[i];
+        if (io_args[i]->device.device_type == static_cast<DLDeviceType>(kDLAmba)) {
+          io_args[i]->device.device_type = kDLCPU;
+          io_args[i]->device.device_id = 0;
+        }
+      }
+    }
     int ret = (*faddr)(const_cast<TVMValue*>(args.values), const_cast<int*>(args.type_codes),
                        args.num_args, &ret_value, &ret_type_code, nullptr);
     ICHECK_EQ(ret, 0) << TVMGetLastError();

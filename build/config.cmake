@@ -133,7 +133,7 @@ set(USE_MICRO_STANDALONE_RUNTIME OFF)
 # - OFF: disable llvm, note this will disable CPU codegen
 #        which is needed for most cases
 # - /path/to/llvm-config: enable specific LLVM when multiple llvm-dev is available.
-set(USE_LLVM OFF)
+set(USE_LLVM ON)
 
 #---------------------------------------------
 # Contrib libraries
@@ -223,13 +223,13 @@ set(USE_ROCBLAS OFF)
 set(USE_SORT ON)
 
 # Whether use Ambarella (CV22) codegen
-set(USE_CV22_CODEGEN OFF)
+set(USE_CV22_CODEGEN ON)
 
 # Whether to build Ambarella target runtime module
 # Possible values:
 # - OFF: disable Ambarella target runtime
 # - /path/to/amba_release that contains include and lib dirs
-set(USE_AMBA_RUNTIME OFF)
+set(USE_AMBA_RUNTIME /home/dlr/prebuild/amba/)
 
 # Whether to build Ambarella target runtime with Amba-Toolchain
 # Possible values:
