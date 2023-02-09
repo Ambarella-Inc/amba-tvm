@@ -399,9 +399,9 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         attr_dict['cnngen_flags'] = ''
 
         graph_surgery_transforms = []
-        if gs_recs['MOD_NODE_NAMES']:
+        if gs_recs[OnnxGraphUtils.GraphSurgeryRecs.MOD_NODE_NAMES]:
             graph_surgery_transforms.append('ModNodeNames')
-        if gs_recs['FOLD_CONSTANTS']:
+        if gs_recs[OnnxGraphUtils.GraphSurgeryRecs.FOLD_CONSTANTS]:
             graph_surgery_transforms.append('FoldConstants')
         attr_dict['graph_surgery_transforms'] = ','.join(graph_surgery_transforms)
 
