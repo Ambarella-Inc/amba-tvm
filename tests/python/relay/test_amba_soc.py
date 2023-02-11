@@ -30,6 +30,8 @@ import numpy as np
 import subprocess
 import argparse
 from enum import Enum
+from collections import namedtuple
+
 logging.basicConfig(level=logging.DEBUG)
 
 # tvm imports
@@ -54,6 +56,8 @@ from tvm.contrib.target.onnx import to_onnx
 # cvflow imports
 from frameworklibs.common import json_schema
 from cvflowbackend import logging as cvb_logger
+
+TVMOutput = namedtuple('TVMOutput', 'name shape dtype')
 
 class cvflow_cfg_keys(Enum):
     GENERAL   = 'general'
@@ -664,11 +668,34 @@ class CV22_TVM_Compilation():
             module_list = PartitionOneToModule(mod, compiler)
 
             if isinstance(mod['main'].ret_type, tvm.ir.type.TupleType):
-                out_list = mod['main'].ret_type.fields
+                _tvm_out_tensors = mod['main'].ret_type.fields
             elif isinstance(mod['main'].ret_type, tvm.ir.tensor_type.TensorType):
-                out_list = [mod['main'].ret_type]
+                _tvm_out_tensors = [mod['main'].ret_type]
             else:
                 self._error_('Unknown return type %s' % type(mod['main'].ret_type))
+
+            # try getting output tensor names from main module
+            main_mod_name = None
+            for subgraph in mod.get_global_vars():
+                name = subgraph.name_hint
+                #if ('main' in name) and ('cv22' not in name):
+                if name == 'main':
+                    main_mod_name = name
+                    break
+
+            _tnames = []
+            if main_mod_name and mod[main_mod_name].attrs:
+                _tnames = mod[main_mod_name].attrs.output_tensor_names
+
+            # reset in case they don't match
+            if len(_tnames) != len(_tvm_out_tensors):
+                _tnames = [None]*len(_tvm_out_tensors)
+
+            # update out_list to contain tensor names
+            out_list = []
+            for i,o in enumerate(_tvm_out_tensors):
+                out_list.append(TVMOutput(_tnames[i], o.shape, o.dtype))
+
             self._update_metadata_outputs_(out_list)
 
             output_folder = join(self.workdir, 'cvflow')
@@ -736,17 +763,23 @@ class CV22_TVM_Compilation():
         except Exception as e:
             self._error_(str(e))
 
+    # out_list: list of tuple<name, shape, dtype>
     def _update_metadata_outputs_(self, out_list):
 
         outputs = []
-        cnt = 0
-        for o in out_list:
-            name = 'output_' + str(cnt)
-            sh = [int(k) for k in o.shape]
-            dt = o.dtype
-            outputs.extend([{'name':name, 'shape':sh, 'dtype':dt}])
+        for cnt,o in enumerate(out_list):
+            if o.name:
+                name = o.name
 
-            cnt += 1
+            # if name is not available, use output_<idx>
+            else:
+                name = 'output_' + str(cnt)
+
+            sh = [int(k) for k in o.shape]
+
+            dt = o.dtype
+
+            outputs.extend([{'name':name, 'shape':sh, 'dtype':dt}])
 
         self.metadata['Model']['Outputs'] = outputs.copy()
 
