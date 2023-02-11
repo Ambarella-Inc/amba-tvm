@@ -114,7 +114,7 @@ def PruneSubgraphs(mod, prune_first=False):
     for subgraph in mod.get_global_vars():
         name = subgraph.name_hint
 
-        if (not mod[name].attrs) or (mod[name].attrs["Compiler"] != "cv22") or ("cv22" not in name):
+        if (not mod[name].attrs) or (("Compiler" in mod[name].attrs) and (mod[name].attrs["Compiler"] != "cv22")) or ("cv22" not in name):
             continue
         else:
             num_macs = relay.analysis.get_total_mac_number(mod[name])
