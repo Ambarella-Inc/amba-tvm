@@ -159,7 +159,8 @@ class CV22_TVM_Compilation():
         return 'ECS_CONTAINER_METADATA_URI_V4' in environ or 'ECS_CONTAINER_METADATA_URI' in environ
 
     def _get_fingerprint_(self):
-        tvm_version = str(tvm.__version__)
+        #tvm_version = str(tvm.__version__)
+        tvm_version = '1.13.2' # manually adding it since the above seems to fail
 
         libpath = subprocess.check_output(['tv2', '-basepath', 'vas'])
         libpath = libpath.decode().rstrip('\n')
