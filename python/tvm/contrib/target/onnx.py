@@ -915,6 +915,7 @@ relay_to_onnx_op_mapping = {
     "nn.conv2d_transpose": ConvTranspose,
     "add": rename("Add"),
     "nn.relu": rename("Relu"),
+    "nn.leaky_relu": rename("LeakyRelu"),
     "transpose": Transpose,
     "nn.dense": MatMul,
     "nn.max_pool2d": MaxPool,
