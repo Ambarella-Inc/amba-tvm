@@ -615,6 +615,7 @@ def test_resize():
                         continue
                     verify_resize(i, o, m, c)
 
+
 def test_lrn():
     """LRN unit test."""
 
@@ -630,6 +631,23 @@ def test_lrn():
     for i in isize:
         for s in sizes:
             verify_lrn(i, s)
+
+
+def test_leakyrelu():
+    """LeakyRelu unit test."""
+
+    def verify_leakyrelu(xshape, alpha, dtype="float32"):
+        x = relay.var("x", relay.ty.TensorType(xshape, dtype))
+        y = relay.nn.leaky_relu(x, alpha=alpha)
+        func = relay.Function([x], y)
+        x_data = np.random.uniform(size=xshape).astype(dtype)
+        verify_results(func, [x_data], "test_leakyrelu", rtol=1e-5, atol=1e-5)
+
+    isize = [(1, 1, 480, 640), (1, 3, 224, 224)]
+    alpha = [.1, .003]
+    for i in isize:
+        for a in alpha:
+            verify_leakyrelu(i, a)
 
 
 def test_sigmoid():
@@ -797,5 +815,5 @@ if __name__ == "__main__":
     test_cast()
     test_round()
     test_cast()
-    test_resize()
     test_dyn()
+    test_leakyrelu()

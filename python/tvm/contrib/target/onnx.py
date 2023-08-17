@@ -811,6 +811,14 @@ class LRN(OpConverter):
         return {"alpha": attrs.alpha, "beta": attrs.beta, "bias": attrs.bias, "size": attrs.size}
 
 
+class LeakyRelu(OpConverter):
+    """Operator converter for LeakyRelu."""
+
+    @classmethod
+    def convert_attributes(cls, attrs):
+        return {"alpha": attrs.alpha}
+
+
 class Cast(OpConverter):
     """Operator converter for Cast."""
 
@@ -915,7 +923,6 @@ relay_to_onnx_op_mapping = {
     "nn.conv2d_transpose": ConvTranspose,
     "add": rename("Add"),
     "nn.relu": rename("Relu"),
-    "nn.leaky_relu": rename("LeakyRelu"),
     "transpose": Transpose,
     "nn.dense": MatMul,
     "nn.max_pool2d": MaxPool,
@@ -945,6 +952,7 @@ relay_to_onnx_op_mapping = {
     "clip": Clip,
     "expand_dims": Expand,
     "nn.lrn": LRN,
+    "nn.leaky_relu": LeakyRelu,
     "min": ReduceMin,
     "max": ReduceMax,
     "sigmoid": rename("Sigmoid"),
