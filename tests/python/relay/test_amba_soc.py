@@ -466,6 +466,8 @@ class CV22_TVM_Compilation():
                     "additionalProperties" : False
                 },
 
+                T.CNNGEN_FLAGS.value : {"type" : "string"},
+                T.VAS_FLAGS.value : {"type" : "string"},
                 T.SDK.value : {"enum" : ["linux", "ambalink"]},
             }
         }
@@ -483,6 +485,14 @@ class CV22_TVM_Compilation():
         self._run_schema_validator_(config_data)
 
         input_config = config_data['inputs']
+
+        # check for cnngen_flags
+        # default: ""
+        cnngen_flags = config_data.get(T.CNNGEN_FLAGS.value, '')
+
+        # check for vas_flags
+        # default: "-auto"
+        vas_flags = config_data.get(T.VAS_FLAGS.value, '-auto')
 
         # check for sdk
         # default: linux
@@ -557,6 +567,8 @@ class CV22_TVM_Compilation():
                 input_config[name][T.SCALE.value] = self._list_from_str_(items[T.SCALE.value], float)
 
         self.sdk = sdk
+        self.cnngen_flags = cnngen_flags
+        self.vas_flags = vas_flags
         self.input_config = input_config
 
         return input_shape
@@ -727,6 +739,8 @@ class CV22_TVM_Compilation():
                         metadata=self.metadata['Model'],
                         input_config=input_config,
                         sdk=self.sdk,
+                        cnngen_flags=self.cnngen_flags,
+                        vas_flags=self.vas_flags,
                         ambalink_cfg=self.json_config[CFG.AMBALINK.value])
 
                 if not ret_status:

@@ -191,22 +191,24 @@ def PartitionOneToModule(mod, compiler):
 
 
 class tags(Enum):
-    SHAPE  = 'shape'
-    FPATH  = 'filepath'
-    FILE   = 'file'
-    DTYPE  = 'dtype'
-    EXTN   = 'extn'
-    CFMT   = 'colorformat'
-    MEAN   = 'mean'
-    SCALE  = 'scale'
-    SDK    = 'sdk'
+    SHAPE           = 'shape'
+    FPATH           = 'filepath'
+    FILE            = 'file'
+    DTYPE           = 'dtype'
+    EXTN            = 'extn'
+    CFMT            = 'colorformat'
+    MEAN            = 'mean'
+    SCALE           = 'scale'
+    CNNGEN_FLAGS    = "cnngen_flags"
+    VAS_FLAGS       = "vas_flags"
+    SDK             = 'sdk'
 
 
 def set_env_variable(key, value):
     os.environ[key] = value
 
 
-def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config, sdk, ambalink_cfg={}):
+def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_config, sdk, cnngen_flags, vas_flags, ambalink_cfg={}):
 
 
     def run_command(cmd):
@@ -377,7 +379,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         return pp_node, first_node
 
 
-    def create_vp_node(node_name, tensor_names_q, inp_cfg, pr_inp_shape, first_node, gs_recs):
+    def create_vp_node(node_name, tensor_names_q, inp_cfg, pr_inp_shape, first_node, gs_recs, cnngen_flags):
 
         # NOTE: only single input is currently supported
         input_tensor_name = tensor_names_q.get()
@@ -396,7 +398,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
             outputs.append(create_metatensor(name=tensor_names_q.get(), dtype='float32'))
 
         attr_dict = {}
-        attr_dict['cnngen_flags'] = ''
+        attr_dict['cnngen_flags'] = cnngen_flags
 
         graph_surgery_transforms = []
         if gs_recs[OnnxGraphUtils.GraphSurgeryRecs.MOD_NODE_NAMES]:
@@ -416,7 +418,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         return vp_node
 
 
-    def create_graph_desc(vp_name, input_config, primary_inputs, primary_outputs, input_preproc_mapping, gs_recs, output_folder):
+    def create_graph_desc(vp_name, input_config, primary_inputs, primary_outputs, input_preproc_mapping, gs_recs, cnngen_flags, output_folder):
 
         # working on one input
 
@@ -497,7 +499,8 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
             inp_cfg,
             primary_inputs[pr_inp],
             first_node,
-            gs_recs
+            gs_recs,
+            cnngen_flags
         )
         graph_desc.append(vp_node)
 
@@ -688,6 +691,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         primary_outputs,
         input_preproc_mapping,
         gs_recs,
+        cnngen_flags,
         output_folder
     )
     schema.dump_json(graph_desc, join(output_folder, output_name+'_splits.json'))
@@ -720,7 +724,7 @@ def CvflowCompilation(model_proto, output_name, output_folder, metadata, input_c
         ckpt_ambapb = cvflowbackend.convert(
             ckpt_ambapb.SerializeToString(),
             metagraph_type='checkpoint',
-            vas_flags='-auto',
+            vas_flags=vas_flags,
             output_name=output_name,
             output_folder=cvflowb_outf
         )
